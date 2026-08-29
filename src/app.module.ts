@@ -11,6 +11,7 @@ import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {
+    // Scoped to songs routes only — no other resource needs it yet.
     consumer.apply(LoggerMiddleware).forRoutes('songs');
   }
 }

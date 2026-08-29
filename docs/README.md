@@ -7,7 +7,9 @@ the learning roadmap below.
   path this app follows, project by project.
 - [`01-progress.md`](./01-progress.md) — checklist of what's done, in
   progress, or not started yet, per project in the roadmap.
+- [`02-commenting-standards.md`](./02-commenting-standards.md) — how we
+  comment code in this project.
 
 As new projects are started, expect more numbered files here (e.g.
-`02-database.md` once Project 2 is under way) covering decisions and setup
+`03-database.md` once Project 2 is under way) covering decisions and setup
 notes specific to that stage.

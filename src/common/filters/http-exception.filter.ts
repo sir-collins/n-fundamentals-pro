@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+/**
+ * Catches every `HttpException` — ours and Nest's own (e.g. a failed
+ * `ParseIntPipe`) — and formats it as a consistent
+ * `{ statusCode, timestamp, path, message }` error response.
+ */
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: HttpException, host: ArgumentsHost) {
@@ -15,6 +20,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
 
+    // Nest's built-in exceptions (e.g. ParseIntPipe failures) return an
+    // object with a `message` field; a plain `throw new NotFoundException('...')`
+    // returns just the string.
     const message =
       typeof exceptionResponse === 'string'
         ? exceptionResponse
