@@ -1,13 +1,32 @@
-GET http://localhost:3000/songs
+@baseUrl = http://localhost:3000
 
-###
-PUT http://localhost:3000/songs/1
-
-###
-GET http://localhost:3000/songs/1
+### Get all songs
+GET {{baseUrl}}/songs
 
 ### Create new song
-POST http://localhost:3000/songs
+POST {{baseUrl}}/songs
+Content-Type: application/json
 
-###
-DELETE http://localhost:3000/songs/1
+{
+  "title": "Blinding Lights",
+  "artists": ["The Weeknd"],
+  "releaseDate": "2019-11-29",
+  "duration": "00:03"
+}
+
+### Get a single song
+GET {{baseUrl}}/songs/1
+
+### Update a song
+PUT {{baseUrl}}/songs/1
+Content-Type: application/json
+
+{
+  "title": "Blinding Lights (Remix)",
+  "artists": ["The Weeknd", "Rosalía"],
+  "releaseDate": "2020-08-05",
+  "duration": "00:03"
+}
+
+### Delete a song
+DELETE {{baseUrl}}/songs/1
