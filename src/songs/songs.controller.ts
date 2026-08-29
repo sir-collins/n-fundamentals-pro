@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Post,
   Put,
   BadRequestException,
@@ -14,14 +15,25 @@ import {
 } from '@nestjs/common';
 import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
+import { Song } from './entities/song.entity';
 
+/**
+ * REST endpoints for the `songs` resource.
+ *
+ * Every handler follows the same shape: a guard clause throws the specific
+ * `HttpException` for a known failure, and the catch block rethrows it
+ * as-is (preserving its status) while converting anything unexpected into
+ * a generic 500. This keeps expected failures (400/404) distinct from
+ * genuine bugs (500) without duplicating that logic per handler.
+ */
 @Controller('songs')
 export class SongsController {
   constructor(private readonly songsService: SongsService) {}
 
+  /** Create a song. */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() createSongDto: CreateSongDto) {
+  create(@Body() createSongDto: CreateSongDto): Song {
     try {
       return this.songsService.create(createSongDto);
     } catch {
@@ -29,9 +41,10 @@ export class SongsController {
     }
   }
 
+  /** List all songs. */
   @Get()
   @HttpCode(HttpStatus.OK)
-  findAll(): CreateSongDto[] {
+  findAll(): Song[] {
     try {
       return this.songsService.findAll();
     } catch {
@@ -39,13 +52,15 @@ export class SongsController {
     }
   }
 
+  /**
+   * Fetch a single song by id.
+   * @throws NotFoundException if no song exists with `id`.
+   */
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number): Song {
     try {
-      const song = this.songsService
-        .findAll()
-        .find((item) => item.title === id);
+      const song = this.songsService.findOne(id);
 
       if (!song) {
         throw new NotFoundException(`Song with id ${id} was not found`);
@@ -61,26 +76,31 @@ export class SongsController {
     }
   }
 
+  /**
+   * Update a song by id. Only the supplied fields are changed.
+   * @throws BadRequestException if the update payload is empty.
+   * @throws NotFoundException if no song exists with `id`.
+   */
   @Put(':id')
   @HttpCode(HttpStatus.OK)
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() body: Partial<CreateSongDto>,
-  ): string {
+  ): Song {
     try {
+      // An empty body would otherwise silently no-op — reject it explicitly
+      // rather than returning 200 for an update that changed nothing.
       if (!body || Object.keys(body).length === 0) {
         throw new BadRequestException('Song update payload is required');
       }
 
-      const songExists = this.songsService
-        .findAll()
-        .some((item) => item.title === id);
+      const song = this.songsService.update(id, body);
 
-      if (!songExists) {
-        throw new NotFoundException(`Song with id: ${id} was not found`);
+      if (!song) {
+        throw new NotFoundException(`Song with id ${id} was not found`);
       }
 
-      return `This action updates a song endpoint for ${id}`;
+      return song;
     } catch (error) {
       if (
         error instanceof BadRequestException ||
@@ -93,16 +113,18 @@ export class SongsController {
     }
   }
 
+  /**
+   * Delete a song by id.
+   * @throws NotFoundException if no song exists with `id`.
+   */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  delete(@Param('id') id: string): void {
+  delete(@Param('id', ParseIntPipe) id: number): void {
     try {
-      const songExists = this.songsService
-        .findAll()
-        .some((item) => item.title === id);
+      const removed = this.songsService.remove(id);
 
-      if (!songExists) {
-        throw new NotFoundException(`Song with id: ${id} was not found`);
+      if (!removed) {
+        throw new NotFoundException(`Song with id ${id} was not found`);
       }
     } catch (error) {
       if (error instanceof NotFoundException) {
