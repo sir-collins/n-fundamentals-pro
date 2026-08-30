@@ -1,7 +1,11 @@
 @baseUrl = http://localhost:3000
 
-### Get all songs
+### Get all songs (paginated — defaults to page 1, limit 10)
+# Response shape: { "data": Song[], "total": number }
 GET {{baseUrl}}/songs
+
+### Get songs, page 2 with 5 per page
+GET {{baseUrl}}/songs?page=2&limit=5
 
 ### Create new song
 POST {{baseUrl}}/songs
@@ -15,10 +19,10 @@ Content-Type: application/json
 }
 
 ### Get a single song
-GET {{baseUrl}}/songs/1
+GET {{baseUrl}}/songs/9
 
 ### Update a song
-PUT {{baseUrl}}/songs/1
+PUT {{baseUrl}}/songs/9
 Content-Type: application/json
 
 {

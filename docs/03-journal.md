@@ -181,6 +181,48 @@ that "should just work" throws an ESM/CJS error, check the new package's
 `type` field and its peer dependency range against what's already
 installed — don't assume the newest version is the compatible one.
 
+## 2026-08-30 — Project 2, step 4: pagination
+
+Added `PaginationQueryDto` (`page`/`limit`, both optional, `@Type(() =>
+Number)` + `class-validator` bounds) and switched `GET /songs` to read it
+via `@Query()`. `SongsService.findAll` now takes the DTO and calls
+`repository.findAndCount({ skip, take })`, returning `{ data, total }`
+instead of a bare array — `total` is what lets a client work out how many
+pages exist.
+
+This needed one more piece to actually work: query string values arrive as
+strings (`"2"`), and `@Type(() => Number)` only does anything if the global
+`ValidationPipe` has `transform: true` — it didn't, by default. Added it in
+`main.ts`. Without this, `page`/`limit` would have stayed strings, and
+`@Min(1)` etc. would have compared a string against a number and behaved
+unpredictably instead of cleanly rejecting bad input.
+
+Also hit a process-hygiene mistake, worth recording since it'll happen
+again otherwise: killed a scratch test server with `kill $NEST_PID`, but
+each Bash tool call in this session is its own shell — a variable set in
+one call doesn't exist in the next, so that "kill" was silently a no-op on
+an undefined variable, and the old server kept running in the background.
+The next test run then hit the *stale* server on the same port (old code,
+no pagination) instead of the new one, which had actually failed to start
+with `EADDRINUSE` — and the stale server's responses looked plausible
+enough (a plain array) that it could easily have been mistaken for a real
+result. Caught it because invalid query params like `?page=abc` came back
+`200` instead of `400`, which shouldn't have been possible. Fixed by
+finding the real PID via `lsof -i :3001` and killing that directly, then
+rerunning the test against a verified-fresh process.
+
+**Lesson:** a background PID captured in one shell command is gone by the
+next command — don't trust it to still be killable later in the same
+session. And more generally: a suspiciously "too normal" result (an old
+response shape, or a validation rule that silently didn't fire) is a
+better signal to double-check *what actually served the request* than to
+assume the new code is just slightly wrong.
+
+Verified: seeded 3 songs, confirmed `page=1&limit=2` and `page=2&limit=2`
+correctly split them 2-and-1 with a consistent `total: 3`, and that
+`limit=0` / `page=abc` both come back `400` with clear per-field messages
+via the existing exception filter.
+
 Verified end to end, not just "it compiles": booted the app, confirmed
 `synchronize: true` created the `song` table (visible via
 `docker exec ... psql -c '\dt'`); ran create/read/update/delete through the

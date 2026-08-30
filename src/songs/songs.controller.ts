@@ -9,12 +9,14 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { SongsService } from './songs.service';
+import { SongsService, Paginated } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Song } from './entities/song.entity';
 
 /**
@@ -46,12 +48,14 @@ export class SongsController {
     }
   }
 
-  /** List all songs. */
+  /** List songs, one page at a time (`?page=&limit=`, both optional). */
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(): Promise<Song[]> {
+  async findAll(
+    @Query() pagination: PaginationQueryDto,
+  ): Promise<Paginated<Song>> {
     try {
-      return await this.songsService.findAll();
+      return await this.songsService.findAll(pagination);
     } catch {
       throw new InternalServerErrorException('Failed to fetch songs');
     }

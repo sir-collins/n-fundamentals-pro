@@ -40,7 +40,8 @@ Swap `SongsService`'s in-memory array for Postgres via TypeORM:
 - [x] Real CRUD against the DB — `SongsService` now uses an injected
       `Repository<Song>` instead of an array; verified with curl + a direct
       `psql` read, and confirmed data survives a full app restart
-- [ ] Pagination on `findAll`
+- [x] Pagination on `findAll` — `GET /songs?page=&limit=`, response shape
+      changed to `{ data, total }`; verified with real multi-page data
 - [ ] Model relationships once there's more than one entity — start with
       something like `Artist` as a one-to-many or many-to-many with `Song`
 

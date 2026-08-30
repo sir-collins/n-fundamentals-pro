@@ -2,7 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateSongDto } from './dto/create-song-dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Song } from './entities/song.entity';
+
+/** One page of results, plus the total count across all pages. */
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+}
 
 /** Backed by Postgres via TypeORM's `Repository<Song>`. */
 @Injectable()
@@ -18,9 +25,14 @@ export class SongsService {
     return this.songsRepository.save(song);
   }
 
-  /** List all songs. */
-  findAll(): Promise<Song[]> {
-    return this.songsRepository.find();
+  /** List songs, one page at a time. */
+  async findAll({ page, limit }: PaginationQueryDto): Promise<Paginated<Song>> {
+    const [data, total] = await this.songsRepository.findAndCount({
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return { data, total };
   }
 
   /** Find a song by id, or `null` if none exists. */
