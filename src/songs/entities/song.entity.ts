@@ -1,8 +1,15 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinTable,
+  ManyToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { Artist } from '../../artists/entities/artist.entity';
 
 /**
  * A song as stored in Postgres. Unlike `CreateSongDto` (client input), this
- * includes the database-assigned `id`.
+ * includes the database-assigned `id` and real `Artist` rows.
  */
 @Entity()
 export class Song {
@@ -12,11 +19,12 @@ export class Song {
   @Column()
   title!: string;
 
-  // Postgres has no native "array of strings" scalar TypeORM maps to by
-  // default — simple-array stores it as a comma-separated string and
-  // transparently converts it back to string[] on read.
-  @Column('simple-array')
-  artists!: string[];
+  // Owning side of the many-to-many relation — @JoinTable() creates and
+  // manages the join table pairing song_id/artist_id. Not loaded by
+  // default; repository calls must ask for it via relations: ['artists'].
+  @ManyToMany(() => Artist)
+  @JoinTable()
+  artists!: Artist[];
 
   @Column()
   releaseDate!: string;

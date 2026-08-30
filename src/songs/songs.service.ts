@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { CreateSongDto } from './dto/create-song-dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Song } from './entities/song.entity';
+import { ArtistsService } from '../artists/artists.service';
 
 /** One page of results, plus the total count across all pages. */
 export interface Paginated<T> {
@@ -17,17 +18,25 @@ export class SongsService {
   constructor(
     @InjectRepository(Song)
     private readonly songsRepository: Repository<Song>,
+    private readonly artistsService: ArtistsService,
   ) {}
 
-  /** Create a song; Postgres assigns the id. */
-  create(createSongDto: CreateSongDto): Promise<Song> {
-    const song = this.songsRepository.create(createSongDto);
+  /**
+   * Create a song; Postgres assigns the id. Artist names from the request
+   * are resolved to real `Artist` rows (created on first use).
+   */
+  async create(createSongDto: CreateSongDto): Promise<Song> {
+    const artists = await this.artistsService.findOrCreateMany(
+      createSongDto.artists,
+    );
+    const song = this.songsRepository.create({ ...createSongDto, artists });
     return this.songsRepository.save(song);
   }
 
-  /** List songs, one page at a time. */
+  /** List songs, one page at a time, with their artists populated. */
   async findAll({ page, limit }: PaginationQueryDto): Promise<Paginated<Song>> {
     const [data, total] = await this.songsRepository.findAndCount({
+      relations: { artists: true },
       skip: (page - 1) * limit,
       take: limit,
     });
@@ -35,13 +44,18 @@ export class SongsService {
     return { data, total };
   }
 
-  /** Find a song by id, or `null` if none exists. */
+  /** Find a song by id, with its artists populated, or `null` if none exists. */
   findOne(id: number): Promise<Song | null> {
-    return this.songsRepository.findOneBy({ id });
+    return this.songsRepository.findOne({
+      where: { id },
+      relations: { artists: true },
+    });
   }
 
   /**
-   * Merge the given fields onto the song with `id`.
+   * Merge the given fields onto the song with `id`. If `artists` names are
+   * supplied, they replace the song's current artists (not additive) —
+   * resolved to real rows the same way `create` does.
    * @returns the updated song, or `null` if no song exists with `id`.
    */
   async update(
@@ -54,7 +68,13 @@ export class SongsService {
       return null;
     }
 
-    Object.assign(song, updateSongDto);
+    const { artists: artistNames, ...rest } = updateSongDto;
+    Object.assign(song, rest);
+
+    if (artistNames) {
+      song.artists = await this.artistsService.findOrCreateMany(artistNames);
+    }
+
     return this.songsRepository.save(song);
   }
 

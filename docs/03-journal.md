@@ -223,6 +223,54 @@ correctly split them 2-and-1 with a consistent `total: 3`, and that
 `limit=0` / `page=abc` both come back `400` with clear per-field messages
 via the existing exception filter.
 
+## 2026-08-30 — Project 2 done: Song ↔ Artist, a real relationship
+
+`Song.artists` went from a `simple-array` of names to a real many-to-many
+relation: new `Artist` entity (`id`, unique `name`), `@ManyToMany()` +
+`@JoinTable()` on `Song` (the owning side — TypeORM creates and manages the
+`song_artists_artist` join table entirely on its own). Added `ArtistsService`
+(`findOrCreateMany`) so the request body can keep sending plain artist name
+strings — it resolves each name to an existing `Artist` row or creates one,
+deduping the input first so two new-but-identical names in one request
+don't both try to insert and collide on the unique constraint.
+
+TypeORM relations aren't loaded by default (avoids surprise joins on every
+query) — `findAll`/`findOne` needed `relations: { artists: true }` added
+explicitly. Note the *object* shape, not `relations: ['artists']` — the
+installed `typeorm` turned out to be `1.1.0` (`npm install typeorm` with no
+pin grabbed a genuinely new major; `@nestjs/typeorm@^11.0.3`'s peer range
+happened to allow it), and that version's `FindOptionsRelations` type only
+accepts the object form. Caught immediately by `tsc`, not by discovering it
+at runtime.
+
+One small copy-paste-adjacent mistake worth naming: while adding the
+`Artist` entities array entry to `TypeOrmModule.forRoot(...)` in
+`app.module.ts`, one edit landed as a nonsensical ternary
+(`import { Artist } from './songs/entities/song.entity' === undefined ? never : '...'`)
+instead of a plain import statement — caught on the next read-through before
+it was ever run, not by a tool. Worth remembering that multi-file edits done
+quickly can produce garbage like this; reading the actual diff before moving
+on is what catches it, not assuming an edit landed as intended.
+
+Also had 15 rows of accumulated test data in `song` from earlier
+`rest-client.http` runs (mostly duplicate "Blinding Lights" from re-running
+the same request) sitting in the table when this step started — looked at
+it directly before clearing it, since `synchronize: true` was about to drop
+the old `artists` column, and dropping a column silently discards whatever
+was in it.
+
+Verified the relationship itself, not just that it compiled: created two
+songs both crediting "The Weeknd" and confirmed — via a direct `psql` query
+against the `artist` table, not just the API response — that only **one**
+`Artist` row exists for that name, referenced by both songs' join rows.
+Then updated one song's artists to drop "The Weeknd", and confirmed the
+join row for that pairing was removed while the `Artist` row itself
+survived (still referenced by the other song) — proving `update` replaces
+a song's associations rather than merely adding to them, and that removing
+an association doesn't delete the shared entity it pointed to.
+
+This closes out Project 2's checklist. Next up: Project 3 (auth).
+
 Verified end to end, not just "it compiles": booted the app, confirmed
 `synchronize: true` created the `song` table (visible via
 `docker exec ... psql -c '\dt'`); ran create/read/update/delete through the

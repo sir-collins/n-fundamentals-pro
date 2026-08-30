@@ -28,7 +28,7 @@ numeric `id` — `create` returns the created song (so the client learns its
 `id`), and `update`/`delete` actually persist changes instead of just
 existence-checking.
 
-## Project 2: Add a Real Database — 🚧 In progress
+## Project 2: Add a Real Database — ✅ Done
 
 Swap `SongsService`'s in-memory array for Postgres via TypeORM:
 - [x] Local Postgres running via Docker — `docker-compose.yml`, started with
@@ -42,8 +42,17 @@ Swap `SongsService`'s in-memory array for Postgres via TypeORM:
       `psql` read, and confirmed data survives a full app restart
 - [x] Pagination on `findAll` — `GET /songs?page=&limit=`, response shape
       changed to `{ data, total }`; verified with real multi-page data
-- [ ] Model relationships once there's more than one entity — start with
-      something like `Artist` as a one-to-many or many-to-many with `Song`
+- [x] Modeled a relationship — `Artist` entity, many-to-many with `Song`
+      via TypeORM's `@ManyToMany()`/`@JoinTable()`. `ArtistsService`
+      resolves artist names to real rows, creating them on first use, so
+      an artist reused across songs is the same row (verified: "The
+      Weeknd" on two songs got one `Artist` row, not two)
+
+**Outcome achieved:** `songs` is fully Postgres-backed — real CRUD,
+pagination, and a real many-to-many relationship to a second entity. Known
+gap, not pursued (out of scope for this project): an `Artist` removed from
+every song it was on stays in the table as an orphaned row — nothing
+prunes those yet.
 
 ## Project 3: Authentication & Authorization — Not started
 

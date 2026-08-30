@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SongsModule } from './songs/songs.module';
 import { Song } from './songs/entities/song.entity';
+import { Artist } from './artists/entities/artist.entity';
 import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
 
 @Module({
@@ -18,7 +19,7 @@ import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
       username: 'nestjs',
       password: 'nestjs',
       database: 'n_fundamentals',
-      entities: [Song],
+      entities: [Song, Artist],
       // Auto-creates/alters tables to match entities — convenient in dev,
       // unsafe in prod (can silently drop/alter columns). Migrations
       // (Project 4) replace this once schema changes need to be reviewable.

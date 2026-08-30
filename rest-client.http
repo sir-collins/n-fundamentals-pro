@@ -19,10 +19,16 @@ Content-Type: application/json
 }
 
 ### Get a single song
-GET {{baseUrl}}/songs/9
+# artists comes back as [{ id, name }, ...] — real Artist rows, not strings.
+# Reusing "The Weeknd" across songs resolves to the same Artist id.
+GET {{baseUrl}}/songs/1
 
 ### Update a song
-PUT {{baseUrl}}/songs/9
+# artists here is still names in, same as create — replaces this song's
+# artists entirely (not additive). A name already used elsewhere is reused,
+# not duplicated; a name dropped from every song stays as an orphaned
+# Artist row (nothing prunes those yet).
+PUT {{baseUrl}}/songs/1
 Content-Type: application/json
 
 {
