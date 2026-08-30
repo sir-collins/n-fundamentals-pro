@@ -105,3 +105,14 @@ non-interactive background shell. Homebrew rolled the install back cleanly
 on failure rather than leaving it half-installed. Docker Desktop needs a
 manual, interactive install for this reason — noted here so future-us
 doesn't try to automate it again and hit the same wall.
+
+Once Docker Desktop was installed and running by hand, `docker compose up -d`
+pulled the `postgres:16-alpine` image (~110MB, one-time cost) and started the
+container without any further issues. Confirmed it was actually ready (not
+just "started") with `docker exec n-fundamentals-postgres pg_isready -U
+nestjs -d n_fundamentals` before calling the step done — a container can
+report "Up" before Postgres inside it has actually finished initializing.
+
+**Lesson:** `docker compose ps` showing `Up` isn't the same as the service
+inside being ready to accept connections yet — `pg_isready` (or an
+equivalent health check) is the real signal.

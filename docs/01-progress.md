@@ -28,17 +28,19 @@ numeric `id` — `create` returns the created song (so the client learns its
 `id`), and `update`/`delete` actually persist changes instead of just
 existence-checking.
 
-## Project 2: Add a Real Database — ⏭️ Up next
+## Project 2: Add a Real Database — 🚧 In progress
 
 Swap `SongsService`'s in-memory array for Postgres via TypeORM:
-- `@nestjs/typeorm` + `typeorm` + `pg`; a `docker-compose.yml` for a local
-  Postgres instance
-- A `Song` `@Entity()` replacing the current plain class, with a real
-  `@PrimaryGeneratedColumn()` id
-- Real CRUD against the DB (repository injected into `SongsService`) +
-  pagination on `findAll`
-- Model relationships once there's more than one entity — start with
-  something like `Artist` as a one-to-many or many-to-many with `Song`
+- [x] Local Postgres running via Docker — `docker-compose.yml`, started with
+      `docker compose up -d`, verified with `pg_isready`
+- [ ] `@nestjs/typeorm` + `typeorm` + `pg`, `TypeOrmModule.forRoot(...)` wired
+      into `AppModule`
+- [ ] A `Song` `@Entity()` replacing the current plain class, with a real
+      `@PrimaryGeneratedColumn()` id
+- [ ] Real CRUD against the DB (repository injected into `SongsService`) +
+      pagination on `findAll`
+- [ ] Model relationships once there's more than one entity — start with
+      something like `Artist` as a one-to-many or many-to-many with `Song`
 
 ## Project 3: Authentication & Authorization — Not started
 
