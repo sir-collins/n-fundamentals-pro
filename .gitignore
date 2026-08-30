@@ -30,10 +30,15 @@ lerna-debug.log*
 
 # IDE - VSCode
 .vscode/*
-!.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+# settings.json is excluded from the un-ignore above: SQLTools (and other
+# DB client extensions) store connection details, including passwords,
+# directly in workspace settings.json — personal, not meant to be shared.
+
+# SQLTools scratch query files (e.g. "My Connection .session.sql")
+*.session.sql
 
 # dotenv environment variable files
 .env
