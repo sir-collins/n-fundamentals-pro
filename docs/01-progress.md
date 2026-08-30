@@ -33,8 +33,8 @@ existence-checking.
 Swap `SongsService`'s in-memory array for Postgres via TypeORM:
 - [x] Local Postgres running via Docker — `docker-compose.yml`, started with
       `docker compose up -d`, verified with `pg_isready`
-- [ ] `@nestjs/typeorm` + `typeorm` + `pg`, `TypeOrmModule.forRoot(...)` wired
-      into `AppModule`
+- [x] `@nestjs/typeorm` + `typeorm` + `pg`, `TypeOrmModule.forRoot(...)` wired
+      into `AppModule`, connection verified against the Docker Postgres
 - [ ] A `Song` `@Entity()` replacing the current plain class, with a real
       `@PrimaryGeneratedColumn()` id
 - [ ] Real CRUD against the DB (repository injected into `SongsService`) +

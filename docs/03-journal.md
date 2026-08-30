@@ -116,3 +116,26 @@ report "Up" before Postgres inside it has actually finished initializing.
 **Lesson:** `docker compose ps` showing `Up` isn't the same as the service
 inside being ready to accept connections yet — `pg_isready` (or an
 equivalent health check) is the real signal.
+
+## 2026-08-30 — Project 2, step 2: wiring TypeORM into the app
+
+Installed `@nestjs/typeorm`, `typeorm`, `pg` and added `TypeOrmModule.forRoot(...)`
+to `AppModule`, pointed at the same host/port/credentials as
+`docker-compose.yml`. `entities: []` for now — no `Song` `@Entity()` yet,
+that's the next step. `synchronize: true` for dev convenience (auto-creates
+tables from entities; unsafe in prod, migrations replace it in Project 4).
+
+Deliberately hardcoded the connection config in code rather than reaching
+for a `.env` file — the roadmap treats "custom configuration + validated
+environment variables" as its own later item (Project 4), so introducing it
+here would be solving a problem a step early.
+
+Verified by booting the app on a scratch port (3001, so as not to fight the
+already-running `start:dev` process on 3000) and confirming the log showed
+`TypeOrmCoreModule dependencies initialized` with no connection errors,
+before killing that one-off process.
+
+**Lesson:** a NestJS module failing to connect to its database shows up as
+a loud, unmissable error during `NestFactory.create()` — there's no way to
+silently boot with a broken DB connection, which makes "did this actually
+work" easy to check.
