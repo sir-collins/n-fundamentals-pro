@@ -271,6 +271,47 @@ an association doesn't delete the shared entity it pointed to.
 
 This closes out Project 2's checklist. Next up: Project 3 (auth).
 
+## 2026-08-30 — Project 3, step 1: user signup
+
+New `User` entity (`id`, unique `email`, `password` holding a bcrypt hash)
+and a `UsersModule`/`UsersService`, structurally the same shape as
+`Artist`/`ArtistsModule`. New `AuthModule`/`AuthController` with
+`POST /auth/signup`, the first endpoint that isn't `songs`.
+
+The core idea worth being precise about: hashing isn't encryption.
+Encryption is reversible (given the key); hashing isn't — you can never
+get the password back from what's stored, only compare a new attempt's
+hash against it. And a *fast* hash (SHA-256 etc.) isn't good enough for
+passwords specifically, because fast means cheap to brute-force at scale.
+bcrypt is deliberately slow (a tunable cost factor — used 10, a common
+default) and salts automatically, so identical passwords don't produce
+identical hashes.
+
+`npm install bcrypt` triggered an "install scripts not yet covered by
+allowScripts" warning — npm's newer script-allowlist security feature
+blocking bcrypt's native-build postinstall script. Didn't just accept that
+silently or fight it: tested `require('bcrypt').hash(...)` directly before
+writing any app code, and it worked — bcrypt shipped a prebuilt binary for
+this platform, so the blocked script was never actually needed. Worth the
+extra minute to confirm rather than assume either "it's broken" or "it's
+fine."
+
+One design decision worth recording: `AuthService.signup` builds the safe
+response by picking `{ id: user.id, email: user.email }` explicitly,
+rather than destructuring `password` off the full entity and returning the
+rest. A rest-omit pattern here would
+silently start including any *new* field added to `User` later (a role
+column, a phone number) in the public response unless someone remembered
+to add it to the omit list too. Explicit field selection can't leak a
+field nobody thought to exclude, by construction — the same "explicit over
+magic" instinct as `SongsService`'s find-or-create logic.
+
+Verified end to end: signed up, confirmed the response is exactly
+`{ id, email }` (no hash), then read the row directly via `psql` and
+confirmed the stored value really is a bcrypt hash, not the plaintext.
+Signing up the same email twice correctly 409s; an invalid email format
+and a too-short password both correctly 400 with clear per-field messages.
+
 Verified end to end, not just "it compiles": booted the app, confirmed
 `synchronize: true` created the `song` table (visible via
 `docker exec ... psql -c '\dt'`); ran create/read/update/delete through the

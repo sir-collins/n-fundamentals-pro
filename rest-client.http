@@ -40,3 +40,22 @@ Content-Type: application/json
 
 ### Delete a song
 DELETE {{baseUrl}}/songs/1
+
+### Sign up
+# Response is { id, email } only — the password hash never comes back.
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "learner@example.com",
+  "password": "correcthorsebattery"
+}
+
+### Sign up again with the same email (should 409)
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "learner@example.com",
+  "password": "correcthorsebattery"
+}

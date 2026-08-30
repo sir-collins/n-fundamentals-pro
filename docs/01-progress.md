@@ -54,7 +54,22 @@ gap, not pursued (out of scope for this project): an `Artist` removed from
 every song it was on stays in the table as an orphaned row — nothing
 prunes those yet.
 
-## Project 3: Authentication & Authorization — Not started
+## Project 3: Authentication & Authorization — 🚧 In progress
+
+- [x] User Signup — `POST /auth/signup`. New `User` entity
+      (`src/users/entities/user.entity.ts`); `UsersService.create` hashes
+      the password with bcrypt before it ever touches the database, and
+      rejects a duplicate email with a `409`. `AuthService.signup` strips
+      the hash before returning — a signup response is `{ id, email }`,
+      never the hash. Verified: signed up, confirmed the stored value is a
+      real bcrypt hash (`$2b$10$...`) via direct `psql`, confirmed a
+      duplicate email 409s and bad input (invalid email, short password)
+      400s.
+- [ ] Login
+- [ ] JWT authentication via Passport
+- [ ] Role-Based Access Control
+- [ ] Two-Factor Authentication
+- [ ] API Key authentication
 
 ## Project 4: Production-Grade Setup — Not started
 
