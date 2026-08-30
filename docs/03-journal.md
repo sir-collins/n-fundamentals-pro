@@ -139,3 +139,54 @@ before killing that one-off process.
 a loud, unmissable error during `NestFactory.create()` — there's no way to
 silently boot with a broken DB connection, which makes "did this actually
 work" easy to check.
+
+## 2026-08-30 — Project 2, step 3: Song becomes a real entity
+
+`Song` got `@Entity()`, `@PrimaryGeneratedColumn()` on `id`, `@Column()` on
+the rest. `artists: string[]` doesn't have a native Postgres scalar
+equivalent, so it's `@Column('simple-array')` — TypeORM stores it as a
+comma-separated string and converts it back to an array transparently.
+`SongsService` swapped its in-memory array for an injected
+`Repository<Song>` (`@InjectRepository(Song)`); every method is now a real
+query (`save`, `find`, `findOneBy`, `delete`).
+
+Said beforehand that `SongsController` "wouldn't need to change" since the
+service's method signatures were staying the same — turned out wrong.
+Repository calls are inherently async (they return `Promise`s), so every
+controller handler needed `async`/`await` added, even though the *shape* of
+each signature didn't change. Worth remembering: swapping sync in-memory
+logic for a real I/O-backed implementation is never purely internal, even
+when nothing about the public API "looks" different on paper.
+
+Two things broke on the way, both fixed:
+- **`songs.controller.spec.ts` / `songs.service.spec.ts`** — both
+  instantiate `SongsService` directly in a `TestingModule` without a real
+  database. Fixed by providing a stub via
+  `{ provide: getRepositoryToken(Song), useValue: {} }` — enough for a
+  "should be defined" smoke test, since neither spec calls a repository
+  method yet.
+- **`@nestjs/typeorm` version mismatch** — `npm install @nestjs/typeorm`
+  grabbed the latest major (12.x) without checking it against the rest of
+  the stack. v12 ships `"type": "module"` (ESM-only, no CommonJS build at
+  all), while this whole project — NestJS 11, `ts-jest` — is CommonJS.
+  `nest start` (webpack-based) tolerated it fine, but Jest's `require()`
+  pipeline couldn't parse the ESM file at all: `SyntaxError: Unexpected
+  token 'export'`. Downgraded to `@nestjs/typeorm@^11.0.3` (matches
+  `@nestjs/core@^11.0.1`'s peer range, and has no `"type": "module"` field)
+  and it went away entirely.
+
+**Lesson:** `npm install <pkg>` with no version pin grabs latest, which can
+silently be a major ahead of the rest of an existing stack. When something
+that "should just work" throws an ESM/CJS error, check the new package's
+`type` field and its peer dependency range against what's already
+installed — don't assume the newest version is the compatible one.
+
+Verified end to end, not just "it compiles": booted the app, confirmed
+`synchronize: true` created the `song` table (visible via
+`docker exec ... psql -c '\dt'`); ran create/read/update/delete through the
+real HTTP API; independently re-read the row with a direct `psql` query
+(bypassing the app entirely) to confirm it was really in Postgres and not
+some other cache; killed the running app process and restarted it, and the
+previously-created song was still there. That last check is the actual
+point of Project 2 — Project 1's in-memory array would have lost everything
+on that restart.

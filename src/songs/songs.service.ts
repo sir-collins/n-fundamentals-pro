@@ -1,64 +1,59 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CreateSongDto } from './dto/create-song-dto';
 import { Song } from './entities/song.entity';
 
-/**
- * In-memory store for songs. Stands in for a real database until Project 2
- * (see docs/00-roadmap.md) swaps this out for TypeORM.
- */
+/** Backed by Postgres via TypeORM's `Repository<Song>`. */
 @Injectable()
 export class SongsService {
-  private songs: Song[] = [];
-  private nextId = 1;
+  constructor(
+    @InjectRepository(Song)
+    private readonly songsRepository: Repository<Song>,
+  ) {}
 
-  /** Create a song, assigning it the next available id. */
-  create(createSongDto: CreateSongDto): Song {
-    const song: Song = { id: this.nextId++, ...createSongDto };
-    this.songs.push(song);
-    return song;
+  /** Create a song; Postgres assigns the id. */
+  create(createSongDto: CreateSongDto): Promise<Song> {
+    const song = this.songsRepository.create(createSongDto);
+    return this.songsRepository.save(song);
   }
 
   /** List all songs. */
-  findAll(): Song[] {
-    return this.songs;
+  findAll(): Promise<Song[]> {
+    return this.songsRepository.find();
   }
 
-  /** Find a song by id, or `undefined` if none exists. */
-  findOne(id: number): Song | undefined {
-    return this.songs.find((song) => song.id === id);
+  /** Find a song by id, or `null` if none exists. */
+  findOne(id: number): Promise<Song | null> {
+    return this.songsRepository.findOneBy({ id });
   }
 
   /**
    * Merge the given fields onto the song with `id`.
-   * @returns the updated song, or `undefined` if no song exists with `id`.
+   * @returns the updated song, or `null` if no song exists with `id`.
    */
-  update(id: number, updateSongDto: Partial<CreateSongDto>): Song | undefined {
-    const song = this.findOne(id);
+  async update(
+    id: number,
+    updateSongDto: Partial<CreateSongDto>,
+  ): Promise<Song | null> {
+    const song = await this.findOne(id);
 
     if (!song) {
-      return undefined;
+      return null;
     }
 
-    // Mutate the found record in place rather than replacing it, so the
-    // returned object is the same instance callers already hold.
     Object.assign(song, updateSongDto);
-    return song;
+    return this.songsRepository.save(song);
   }
 
   /**
    * Remove the song with `id`.
    * @returns whether a song was found and removed.
    */
-  remove(id: number): boolean {
-    // findIndex + splice instead of filter — filter would silently no-op on
-    // an unknown id, and callers need to know whether anything was removed.
-    const index = this.songs.findIndex((song) => song.id === id);
-
-    if (index === -1) {
-      return false;
-    }
-
-    this.songs.splice(index, 1);
-    return true;
+  async remove(id: number): Promise<boolean> {
+    // delete() issues a DELETE WHERE id = ... directly — no need to fetch
+    // the row first. `affected` tells us whether a row actually matched.
+    const result = await this.songsRepository.delete(id);
+    return result.affected !== 0;
   }
 }

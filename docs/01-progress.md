@@ -35,10 +35,12 @@ Swap `SongsService`'s in-memory array for Postgres via TypeORM:
       `docker compose up -d`, verified with `pg_isready`
 - [x] `@nestjs/typeorm` + `typeorm` + `pg`, `TypeOrmModule.forRoot(...)` wired
       into `AppModule`, connection verified against the Docker Postgres
-- [ ] A `Song` `@Entity()` replacing the current plain class, with a real
+- [x] A `Song` `@Entity()` replacing the current plain class, with a real
       `@PrimaryGeneratedColumn()` id
-- [ ] Real CRUD against the DB (repository injected into `SongsService`) +
-      pagination on `findAll`
+- [x] Real CRUD against the DB — `SongsService` now uses an injected
+      `Repository<Song>` instead of an array; verified with curl + a direct
+      `psql` read, and confirmed data survives a full app restart
+- [ ] Pagination on `findAll`
 - [ ] Model relationships once there's more than one entity — start with
       something like `Artist` as a one-to-many or many-to-many with `Song`
 

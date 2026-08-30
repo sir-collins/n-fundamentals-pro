@@ -25,6 +25,11 @@ import { Song } from './entities/song.entity';
  * as-is (preserving its status) while converting anything unexpected into
  * a generic 500. This keeps expected failures (400/404) distinct from
  * genuine bugs (500) without duplicating that logic per handler.
+ *
+ * Handlers are `async` because `SongsService` now talks to Postgres —
+ * every call is awaited inside the `try` so a rejected query lands in the
+ * `catch` block like any other error, instead of escaping as an unhandled
+ * rejection.
  */
 @Controller('songs')
 export class SongsController {
@@ -33,9 +38,9 @@ export class SongsController {
   /** Create a song. */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() createSongDto: CreateSongDto): Song {
+  async create(@Body() createSongDto: CreateSongDto): Promise<Song> {
     try {
-      return this.songsService.create(createSongDto);
+      return await this.songsService.create(createSongDto);
     } catch {
       throw new InternalServerErrorException('Failed to create song');
     }
@@ -44,9 +49,9 @@ export class SongsController {
   /** List all songs. */
   @Get()
   @HttpCode(HttpStatus.OK)
-  findAll(): Song[] {
+  async findAll(): Promise<Song[]> {
     try {
-      return this.songsService.findAll();
+      return await this.songsService.findAll();
     } catch {
       throw new InternalServerErrorException('Failed to fetch songs');
     }
@@ -58,9 +63,9 @@ export class SongsController {
    */
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  findOne(@Param('id', ParseIntPipe) id: number): Song {
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<Song> {
     try {
-      const song = this.songsService.findOne(id);
+      const song = await this.songsService.findOne(id);
 
       if (!song) {
         throw new NotFoundException(`Song with id ${id} was not found`);
@@ -83,10 +88,10 @@ export class SongsController {
    */
   @Put(':id')
   @HttpCode(HttpStatus.OK)
-  update(
+  async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: Partial<CreateSongDto>,
-  ): Song {
+  ): Promise<Song> {
     try {
       // An empty body would otherwise silently no-op — reject it explicitly
       // rather than returning 200 for an update that changed nothing.
@@ -94,7 +99,7 @@ export class SongsController {
         throw new BadRequestException('Song update payload is required');
       }
 
-      const song = this.songsService.update(id, body);
+      const song = await this.songsService.update(id, body);
 
       if (!song) {
         throw new NotFoundException(`Song with id ${id} was not found`);
@@ -119,9 +124,9 @@ export class SongsController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  delete(@Param('id', ParseIntPipe) id: number): void {
+  async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {
     try {
-      const removed = this.songsService.remove(id);
+      const removed = await this.songsService.remove(id);
 
       if (!removed) {
         throw new NotFoundException(`Song with id ${id} was not found`);
