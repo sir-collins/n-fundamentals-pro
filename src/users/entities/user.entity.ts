@@ -28,4 +28,18 @@ export class User {
   // signup.
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role!: UserRole;
+
+  // Plain text for now — a known, deliberate gap (same treatment as the
+  // hardcoded JWT secret): a real production system would encrypt this at
+  // rest. `null` until the user has generated a secret via
+  // POST /auth/2fa/generate.
+  //
+  // type: 'varchar' is explicit here, not inferred — TypeScript's
+  // `string | null` union reflects as just "Object" at runtime, which
+  // TypeORM can't map to a Postgres column type on its own.
+  @Column({ type: 'varchar', nullable: true })
+  twoFactorSecret!: string | null;
+
+  @Column({ default: false })
+  isTwoFactorEnabled!: boolean;
 }

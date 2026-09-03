@@ -151,3 +151,34 @@ Authorization: Bearer {{token}}
 
 ### Get all songs — still needs no token at all; reads stay public
 GET {{baseUrl}}/songs
+
+### Generate a 2FA secret (paste in a fresh @token from "Log in" above)
+# Response is { qrCodeDataUrl }, a data:image/png;base64,... string — paste
+# it into a browser address bar to see the QR code, or scan it with a real
+# authenticator app (Google Authenticator, Authy, ...). Calling this again
+# overwrites the previous secret, so re-scan if you do.
+POST {{baseUrl}}/auth/2fa/generate
+Authorization: Bearer {{token}}
+
+### Confirm 2FA setup with the code your authenticator app shows
+# Since the secret is stored in plain text (a known, deliberate gap — see
+# the journal), you can also compute a code without a real app:
+#   docker exec n-fundamentals-postgres psql -U nestjs -d n_fundamentals \
+#     -t -A -c "SELECT \"twoFactorSecret\" FROM \"user\" WHERE email = 'learner@example.com';"
+#   node -e "console.log(require('otplib').authenticator.generate('PASTE_SECRET_HERE'))"
+POST {{baseUrl}}/auth/2fa/turn-on
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "code": "PASTE_TOTP_CODE_HERE"
+}
+
+### Confirm 2FA setup with an obviously wrong code (should 400)
+POST {{baseUrl}}/auth/2fa/turn-on
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "code": "000000"
+}

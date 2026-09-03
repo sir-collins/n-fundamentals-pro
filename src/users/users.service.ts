@@ -44,4 +44,19 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOneBy({ email });
   }
+
+  /** Look up a user by id, or `null` if none exists. */
+  async findById(id: number): Promise<User | null> {
+    return this.usersRepository.findOneBy({ id });
+  }
+
+  /** Store a newly-generated TOTP secret for a user. */
+  async setTwoFactorSecret(id: number, secret: string): Promise<void> {
+    await this.usersRepository.update(id, { twoFactorSecret: secret });
+  }
+
+  /** Mark 2FA as active, once the user has confirmed their setup. */
+  async enableTwoFactor(id: number): Promise<void> {
+    await this.usersRepository.update(id, { isTwoFactorEnabled: true });
+  }
 }

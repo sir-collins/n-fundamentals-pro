@@ -494,3 +494,71 @@ with `"Insufficient role for this action"`; with the promoted admin's
 fresh token, `create`/`update`/`delete` all succeed normally. `GET
 /songs` and `GET /songs/:id` still need no token at all, unaffected.
 `GET /auth/profile` with the admin token now includes `"role":"admin"`.
+
+## 2026-09-03 — Project 3, step 5a: Two-Factor Authentication (enable + confirm)
+
+TOTP (Time-based One-Time Password) is worth being precise about: the
+server and the user's authenticator app both hold the same secret ahead of
+time, and both *independently* compute a 6-digit code from that secret
+plus the current time. The code is never transmitted between them in
+advance — that's what actually makes it prove possession of the device,
+not just knowledge of something. `otplib` handles generating the secret
+and both sides of that computation; `qrcode` turns the secret into a
+scannable image so nobody has to type a base32 string into their phone by
+hand.
+
+Split this the same way login/JWT-protection was split: this step is only
+*enabling* 2FA (generate a secret, confirm it via a real code before
+trusting it's set up correctly). Actually *enforcing* it — changing what
+`POST /auth/login` returns once `isTwoFactorEnabled` is true — is a
+deliberate, separate follow-up. Enabling without enforcing is a complete,
+verifiable unit on its own: you can prove the whole generate → scan →
+confirm loop works without touching the login flow at all.
+
+Third instance of the same dependency lesson: `otplib`'s latest major
+(`13.x`) is ESM-only, so pinned `otplib@12.0.1` (plain CJS, ships its own
+`index.d.ts` — no separate `@types/otplib` needed; a same-named package at
+`@types/otplib@10.0.0` exists on npm but is unrelated/stale, not used).
+Same trap, third package, same fix: check the registry before installing
+anything, not just anything popular.
+
+A real bug the "boot it and hit it with curl" discipline caught that `tsc`
+and `eslint` both missed entirely: `twoFactorSecret!: string | null` on
+the entity threw `DataTypeNotSupportedError: Data type "Object" ... is not
+supported by "postgres"` at actual boot time. TypeScript's reflection
+metadata for a union type like `string | null` is just `Object` — fine for
+TypeScript itself, useless for TypeORM trying to pick a Postgres column
+type from it. Fixed with an explicit `@Column({ type: 'varchar',
+nullable: true })`. Worth remembering: a nullable *string* column needs
+its type spelled out; TypeORM only infers cleanly from non-union types.
+
+Also fixed, a smaller ripple from adding new `User` columns at all:
+`AuthService.validateUser`'s return type was `Omit<User, 'password'>`,
+which — now that `User` has `twoFactorSecret`/`isTwoFactorEnabled` — meant
+its actual return value (`{ id, email, role }`) stopped satisfying its own
+declared type. Same fix as `signup` got during the RBAC step: switched to
+an explicit `Pick<User, 'id' | 'email' | 'role'>` everywhere that value
+flows (`validateUser`, `login`'s parameter, `LocalStrategy.validate`, the
+login handler's `req.user` type) — states exactly what's actually used,
+so it stops silently drifting every time `User` grows a column unrelated
+to authentication.
+
+Why a wrong code is `400`, not `401`/`403`: the caller already has a valid
+JWT — their identity and role aren't in question. The failure is just
+"this specific 6-digit code doesn't match," which is closer to a
+validation failure (like the *other* `400`s in this codebase) than an
+auth failure.
+
+One gap named rather than glossed over: `twoFactorSecret` is stored in
+Postgres as plain text, not encrypted at rest. Same "deferred, not hidden"
+treatment as the hardcoded JWT secret — acceptable for a learning project,
+not for a real production system.
+
+Verified end to end on scratch port 3001: generated a secret for
+`learner@example.com`, pulled the plaintext secret directly via `psql`
+(since it's stored that way anyway), computed a real TOTP code from it
+with `otplib` in a throwaway `node -e` — the same computation a real
+authenticator app does — and confirmed the server accepted it:
+`isTwoFactorEnabled` flipped to `true` in Postgres, matching the API
+response. An obviously wrong code correctly `400`s. Both new routes still
+`401` with no token at all, confirming the JWT guard is still in force.

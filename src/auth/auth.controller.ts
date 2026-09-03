@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -14,6 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
+import { TwoFactorCodeDto } from './dto/two-factor-code.dto';
 import { User, UserRole } from '../users/entities/user.entity';
 
 @Controller('auth')
@@ -48,7 +50,7 @@ export class AuthController {
   @UseGuards(AuthGuard('local'))
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Req() req: Request & { user: Omit<User, 'password'> }): {
+  login(@Req() req: Request & { user: Pick<User, 'id' | 'email' | 'role'> }): {
     access_token: string;
   } {
     try {
@@ -71,5 +73,51 @@ export class AuthController {
     req: Request & { user: { id: number; email: string; role: UserRole } },
   ): { id: number; email: string; role: UserRole } {
     return req.user;
+  }
+
+  /**
+   * Generate a new TOTP secret and return it as a scannable QR code data
+   * URL. Requires a valid JWT — 2FA setup only makes sense for a caller
+   * we already know the identity of.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('2fa/generate')
+  @HttpCode(HttpStatus.OK)
+  async generateTwoFactor(
+    @Req() req: Request & { user: { id: number; email: string } },
+  ): Promise<{ qrCodeDataUrl: string }> {
+    try {
+      return await this.authService.generateTwoFactorSecret(
+        req.user.id,
+        req.user.email,
+      );
+    } catch {
+      throw new InternalServerErrorException(
+        'Failed to generate two-factor secret',
+      );
+    }
+  }
+
+  /**
+   * Confirm 2FA setup with a code from the user's authenticator app.
+   * @throws BadRequestException if the code doesn't match.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('2fa/turn-on')
+  @HttpCode(HttpStatus.OK)
+  async turnOnTwoFactor(
+    @Req() req: Request & { user: { id: number } },
+    @Body() dto: TwoFactorCodeDto,
+  ): Promise<{ message: string }> {
+    try {
+      await this.authService.turnOnTwoFactor(req.user.id, dto.code);
+      return { message: 'Two-factor authentication enabled' };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Failed to turn on 2FA');
+    }
   }
 }

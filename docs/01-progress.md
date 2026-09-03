@@ -105,7 +105,21 @@ prunes those yet.
       one; a promoted `'admin'`'s token succeeds on create/update/delete;
       `GET /songs` and `GET /songs/:id` still need no token at all;
       `GET /auth/profile` now surfaces the caller's own role.
-- [ ] Two-Factor Authentication
+- [ ] Two-Factor Authentication — 🚧 in progress. `User` gains
+      `twoFactorSecret` (nullable, plain text — a known, deliberate gap,
+      same treatment as the JWT secret) and `isTwoFactorEnabled` (default
+      `false`). `POST /auth/2fa/generate` (JWT-protected) creates a TOTP
+      secret via `otplib` and returns it as a scannable QR code data URL;
+      `POST /auth/2fa/turn-on` confirms setup with a 6-digit code from the
+      user's authenticator app, only then flipping `isTwoFactorEnabled` —
+      proves the QR was actually scanned before 2FA starts being enforced
+      anywhere. A wrong code is `400` (identity/role aren't in question,
+      just whether the code matches). Deliberately **not yet enforced at
+      login** — `POST /auth/login` doesn't check `isTwoFactorEnabled` yet;
+      that's the remaining sub-step. Verified: generated a real secret,
+      computed a real TOTP code from it, confirmed the server accepts it
+      and `isTwoFactorEnabled` flips to `true` in Postgres; confirmed a
+      wrong code 400s and both routes still 401 with no token.
 - [ ] API Key authentication
 
 ## Project 4: Production-Grade Setup — Not started
