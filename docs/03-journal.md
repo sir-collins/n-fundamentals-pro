@@ -382,3 +382,55 @@ password and a never-signed-up email both 401 with `"Invalid credentials"`
 field entirely also 401s, but with Passport's own generic `"Unauthorized"`
 message — that path never reaches `LocalStrategy.validate` at all, so it
 was worth actually running rather than assuming it'd match the other two.
+
+## 2026-09-03 — Project 3, step 3: protecting a route with the JWT
+
+Login issues a token; this step is the other half — a route that actually
+requires one. `JwtStrategy` (`src/auth/strategies/jwt.strategy.ts`) is a
+direct sibling of `LocalStrategy`, same shape: Passport extracts and
+verifies the token (`ExtractJwt.fromAuthHeaderAsBearerToken()`, signature +
+expiry checked against the same secret used to sign it) *before*
+`validate` ever runs, and `AuthGuard('jwt')` on a route means a
+missing/malformed/expired token 401s without the controller body executing
+at all — exactly the same guard-runs-first shape as `AuthGuard('local')`
+on login.
+
+Added the route deliberately as something new (`GET /auth/profile`,
+returning `{ id, email }` from `req.user`) rather than retrofitting
+`songs`. *Which* `songs` routes should require auth, and for whom, is
+really what Role-Based Access Control (the next roadmap item) is about —
+this step is just "does the guard mechanism work," kept separate from that
+decision.
+
+`JwtStrategy.validate` trusts the decoded payload directly as `req.user` —
+no database lookup per request. Worth being honest about the trade-off
+that comes with that, not just asserting the upside: a JWT's whole appeal
+is *not* needing a DB round trip to authenticate a request, but that means
+if a user were deleted or changed after a token was issued, the token
+would keep working until it naturally expires (1 hour, per the
+`signOptions` set in step 2). Accepted deliberately for now — the
+alternative (re-fetching the user every request) throws away the reason
+to use a JWT in the first place — but noted here rather than left as a
+silent gap.
+
+One small refactor alongside the new strategy: the JWT secret used to
+exist only inside `JwtModule.register(...)` in `auth.module.ts`. Now that
+`JwtStrategy` also needs it (to verify what `JwtModule` signs), it's
+factored out into one exported `JWT_SECRET` constant both places import —
+avoids the two ever silently drifting onto different literal strings,
+which would otherwise fail in a confusing way (every token would verify as
+invalid, with no obvious clue why).
+
+`passport-jwt` checked against the registry before installing (same
+discipline as `@nestjs/jwt`/`@nestjs/passport` last step) — `4.0.1`, no
+`"type": "module"`, so no ESM trap this time.
+
+Also: Docker's Postgres container had stopped again since the last
+session — confirmed and restarted it *before* booting the scratch server
+this time, rather than discovering it via a failed boot like last step.
+
+Verified end to end on scratch port 3001: `/auth/profile` with no
+`Authorization` header 401s; with a garbage token, also 401s; logged in
+fresh for `learner@example.com`, and calling `/auth/profile` with that
+token returned exactly `{ id: 3, email: "learner@example.com" }` — the
+real authenticated identity, not just "some 200 response."

@@ -77,10 +77,20 @@ prunes those yet.
       `{ sub, email, iat, exp }`; wrong password and an unknown email both
       401; a missing `password` field also 401s (Passport's own
       missing-credentials path, before `LocalStrategy.validate` runs).
-- [ ] JWT authentication via Passport — issuing a JWT is done above; this
-      item is about a route actually *requiring* one (`JwtStrategy` +
-      `AuthGuard('jwt')` rejecting requests without a valid token), still
-      to do.
+- [x] JWT authentication via Passport — `GET /auth/profile`, guarded by
+      `AuthGuard('jwt')`, the first route that actually requires a token.
+      New `JwtStrategy` (`src/auth/strategies/jwt.strategy.ts`) extracts
+      the token from the `Authorization: Bearer ...` header and lets
+      Passport verify its signature/expiry before the handler ever runs;
+      `validate` trusts the decoded payload directly as `req.user` (no DB
+      re-lookup — a deliberate, accepted trade-off: a user changed/deleted
+      after a token was issued still passes until that token's own
+      expiry). The signing secret is factored into one exported
+      `JWT_SECRET` constant in `auth.module.ts`, used by both
+      `JwtModule.register(...)` and `JwtStrategy`, so signing and
+      verifying can't silently drift onto different values. Verified: no
+      token 401s, a garbage token 401s, a fresh login's token returns
+      `200` + `{ id, email }` matching that user.
 - [ ] Role-Based Access Control
 - [ ] Two-Factor Authentication
 - [ ] API Key authentication

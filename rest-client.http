@@ -88,3 +88,13 @@ Content-Type: application/json
   "email": "nobody@example.com",
   "password": "correcthorsebattery"
 }
+
+### Get my profile (paste in a fresh access_token from "Log in" above)
+# First protected route — AuthGuard('jwt') checks the token before this
+# ever runs. Response is { id, email }.
+@token = PASTE_ACCESS_TOKEN_HERE
+GET {{baseUrl}}/auth/profile
+Authorization: Bearer {{token}}
+
+### Get my profile with no token (should 401)
+GET {{baseUrl}}/auth/profile

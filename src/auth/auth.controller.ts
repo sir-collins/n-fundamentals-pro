@@ -2,6 +2,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   InternalServerErrorException,
@@ -55,5 +56,20 @@ export class AuthController {
     } catch {
       throw new InternalServerErrorException('Failed to log in');
     }
+  }
+
+  /**
+   * The authenticated user's own identity. First route protected by a
+   * JWT: `AuthGuard('jwt')` runs `JwtStrategy` before this body ever
+   * executes — a missing, malformed, or expired token 401s there, so
+   * nothing in this handler can actually throw.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('profile')
+  profile(@Req() req: Request & { user: { id: number; email: string } }): {
+    id: number;
+    email: string;
+  } {
+    return req.user;
   }
 }
