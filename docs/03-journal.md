@@ -321,3 +321,64 @@ some other cache; killed the running app process and restarted it, and the
 previously-created song was still there. That last check is the actual
 point of Project 2 — Project 1's in-memory array would have lost everything
 on that restart.
+
+## 2026-09-03 — Project 3, step 2: login + issuing a JWT
+
+`POST /auth/login`, backed by Passport's local strategy. Passport works
+via *strategies* — one per auth mechanism — and NestJS's `@nestjs/passport`
+wraps that pattern. `LocalStrategy` (`src/auth/strategies/local.strategy.ts`,
+a new `strategies/` subfolder anticipating a `jwt.strategy.ts` sibling
+later) plugs into `AuthGuard('local')` on the route: the guard runs before
+the controller handler's body ever executes, calling `LocalStrategy.validate`
+(which calls `AuthService.validateUser`) and turning a thrown
+`UnauthorizedException` into a `401` automatically. Worth being precise
+about: `AuthService.validateUser` itself returns `null` on a bad
+email/password, rather than throwing — that's the Passport convention;
+*`LocalStrategy` is what decides* a `null` means "throw 401," keeping the
+service method a plain predicate-ish lookup and the HTTP-shaped decision at
+the strategy boundary. passport-local also defaults to a `username` field,
+so the strategy's `super()` call needed an explicit
+`{ usernameField: 'email' }` override to match this app's DTOs.
+
+On success, `AuthService.login` signs a JWT via `@nestjs/jwt`'s
+`JwtService`, payload `{ sub: user.id, email: user.email }`. Concept worth
+being clear on: a JWT is a signed, self-contained credential — the server
+verifies it later by re-checking the signature, no DB lookup or
+server-side session state needed. That's a deliberate trade: it moves
+"memory" from the server onto the client, at the cost that a leaked
+signing secret lets an attacker forge a token for *any* user. This step
+only *issues* tokens — no route requires one yet. That's next.
+
+Pinned the new dependencies deliberately: `npm install @nestjs/jwt
+@nestjs/passport` unpinned would have grabbed their latest majors (v12),
+both ESM-only (`"type": "module"`) — the exact same trap `@nestjs/typeorm`
+sprang back in Project 2, step 3, breaking `ts-jest`'s CJS `require()`
+pipeline. Installed `@nestjs/jwt@^11.0.2` and `@nestjs/passport@^11.0.5`
+instead (peer-compatible with this app's `@nestjs/core@11.x`), and checked
+the installed `package.json`s afterward to confirm neither carries
+`"type": "module"` before writing any code against them.
+
+The JWT signing secret is a hardcoded placeholder in `AuthModule`
+(`JwtModule.register({ secret: 'CHANGE_ME_DEV_ONLY_SECRET', ... })`) for
+now, same "defer to Project 4's env-var config" call as the Postgres
+credentials in `app.module.ts` — but flagged more seriously in the code
+comment: this repo is public, and unlike a local dev DB password, a real
+JWT secret genuinely must stay secret. It's a placeholder that must never
+follow this app anywhere it isn't purely local.
+
+`docker compose` had actually stopped since the last session (Docker
+Desktop itself wasn't running) — the scratch app's first boot attempt
+exhausted its Postgres connection retries and exited before I noticed;
+had to `open -a Docker`, wait for the daemon, `docker compose up -d`, and
+reboot the scratch server. Small reminder that "the DB was up last time"
+isn't something to assume carries between sessions.
+
+Verified end to end on scratch port 3001: logged in with the
+already-existing `learner@example.com` user from the signup step, decoded
+the returned JWT's payload and confirmed it's exactly
+`{ sub, email, iat, exp }` — no password hash, nothing extra; a wrong
+password and a never-signed-up email both 401 with `"Invalid credentials"`
+(our own message, from `LocalStrategy`); a request missing the `password`
+field entirely also 401s, but with Passport's own generic `"Unauthorized"`
+message — that path never reaches `LocalStrategy.validate` at all, so it
+was worth actually running rather than assuming it'd match the other two.

@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { SignupDto } from './dto/signup.dto';
 import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   /**
    * Register a new user.
@@ -23,5 +28,39 @@ export class AuthService {
   async signup(dto: SignupDto): Promise<Omit<User, 'password'>> {
     const user = await this.usersService.create(dto.email, dto.password);
     return { id: user.id, email: user.email };
+  }
+
+  /**
+   * Verify an email/password pair against the stored bcrypt hash.
+   * @returns the user (without its password hash) if valid, `null`
+   *   otherwise — Passport's local-strategy convention: return `null`
+   *   rather than throw, so `LocalStrategy.validate` decides how to turn
+   *   that into a `401`.
+   */
+  async validateUser(
+    email: string,
+    password: string,
+  ): Promise<Omit<User, 'password'> | null> {
+    const user = await this.usersService.findByEmail(email);
+
+    if (!user) {
+      return null;
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatches) {
+      return null;
+    }
+
+    return { id: user.id, email: user.email };
+  }
+
+  // Not async: JwtService.sign is synchronous (a separate signAsync exists
+  // for when that's actually needed) — this signature says what it does.
+  /** Issue a signed JWT for an already-authenticated user. */
+  login(user: Omit<User, 'password'>): { access_token: string } {
+    const payload = { sub: user.id, email: user.email };
+    return { access_token: this.jwtService.sign(payload) };
   }
 }

@@ -65,8 +65,22 @@ prunes those yet.
       real bcrypt hash (`$2b$10$...`) via direct `psql`, confirmed a
       duplicate email 409s and bad input (invalid email, short password)
       400s.
-- [ ] Login
-- [ ] JWT authentication via Passport
+- [x] Login — `POST /auth/login`, guarded by Passport's `AuthGuard('local')`.
+      New `LocalStrategy` (`src/auth/strategies/local.strategy.ts`)
+      validates email/password against the bcrypt hash via
+      `AuthService.validateUser`, throwing `UnauthorizedException` on a bad
+      pair (Passport turns that into a `401` automatically, before the
+      controller body runs). `AuthService.login` issues a JWT (`@nestjs/jwt`,
+      wired up via `JwtModule.register(...)` in `AuthModule`) with payload
+      `{ sub: id, email }`, returned as `{ access_token }`. Verified: a
+      valid login returns a token whose decoded payload is exactly
+      `{ sub, email, iat, exp }`; wrong password and an unknown email both
+      401; a missing `password` field also 401s (Passport's own
+      missing-credentials path, before `LocalStrategy.validate` runs).
+- [ ] JWT authentication via Passport — issuing a JWT is done above; this
+      item is about a route actually *requiring* one (`JwtStrategy` +
+      `AuthGuard('jwt')` rejecting requests without a valid token), still
+      to do.
 - [ ] Role-Based Access Control
 - [ ] Two-Factor Authentication
 - [ ] API Key authentication

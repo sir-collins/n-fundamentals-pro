@@ -35,4 +35,9 @@ export class UsersService {
     });
     return this.usersRepository.save(user);
   }
+
+  /** Look up a user by email, or `null` if none exists. */
+  async findByEmail(email: string): Promise<User | null> {
+    return this.usersRepository.findOneBy({ email });
+  }
 }

@@ -6,7 +6,11 @@ import {
   HttpStatus,
   InternalServerErrorException,
   Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { User } from '../users/entities/user.entity';
@@ -30,6 +34,26 @@ export class AuthController {
       }
 
       throw new InternalServerErrorException('Failed to sign up');
+    }
+  }
+
+  /**
+   * Log in with email + password, returning a signed JWT.
+   *
+   * `AuthGuard('local')` runs `LocalStrategy` before this body ever
+   * executes — a bad credential pair 401s there, so the try/catch below
+   * only covers unexpected failures inside `login()` itself.
+   */
+  @UseGuards(AuthGuard('local'))
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  login(@Req() req: Request & { user: Omit<User, 'password'> }): {
+    access_token: string;
+  } {
+    try {
+      return this.authService.login(req.user);
+    } catch {
+      throw new InternalServerErrorException('Failed to log in');
     }
   }
 }

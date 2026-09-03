@@ -59,3 +59,32 @@ Content-Type: application/json
   "email": "learner@example.com",
   "password": "correcthorsebattery"
 }
+
+### Log in
+# Response is { access_token }. AuthGuard('local') checks email/password
+# against the stored bcrypt hash before this ever reaches the handler.
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "learner@example.com",
+  "password": "correcthorsebattery"
+}
+
+### Log in with the wrong password (should 401)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "learner@example.com",
+  "password": "wrongpassword"
+}
+
+### Log in with an email that was never signed up (should 401)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nobody@example.com",
+  "password": "correcthorsebattery"
+}
