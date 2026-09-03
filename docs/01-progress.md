@@ -91,7 +91,20 @@ prunes those yet.
       verifying can't silently drift onto different values. Verified: no
       token 401s, a garbage token 401s, a fresh login's token returns
       `200` + `{ id, email }` matching that user.
-- [ ] Role-Based Access Control
+- [x] Role-Based Access Control — `User` gains a `role` column (`'user'`
+      default, `'admin'`), enforced structurally: `UsersService.create`
+      has no role parameter at all, so nothing signup-shaped can ever hand
+      out `'admin'`. New `@Roles(...)` decorator + `RolesGuard`
+      (`src/auth/decorators/roles.decorator.ts`,
+      `src/auth/guards/roles.guard.ts`) — opt-in per route via metadata,
+      `403 Forbidden` (not `401`) on a role mismatch, since the caller
+      *is* known, just not allowed. Applied to `songs` mutations (`POST`,
+      `PUT`, `DELETE` — now `admin`-only via `AuthGuard('jwt')` +
+      `RolesGuard`, in that order); `songs` reads stay fully public.
+      Verified: no token 401s a mutation; a real `'user'`-role token 403s
+      one; a promoted `'admin'`'s token succeeds on create/update/delete;
+      `GET /songs` and `GET /songs/:id` still need no token at all;
+      `GET /auth/profile` now surfaces the caller's own role.
 - [ ] Two-Factor Authentication
 - [ ] API Key authentication
 

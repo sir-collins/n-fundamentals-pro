@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JWT_SECRET } from '../auth.module';
+import { UserRole } from '../../users/entities/user.entity';
 
 /**
  * Passport strategy backing any route guarded with `AuthGuard('jwt')`.
@@ -25,10 +26,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(payload: { sub: number; email: string }): {
+  validate(payload: { sub: number; email: string; role: UserRole }): {
     id: number;
     email: string;
+    role: UserRole;
   } {
-    return { id: payload.sub, email: payload.email };
+    return { id: payload.sub, email: payload.email, role: payload.role };
   }
 }

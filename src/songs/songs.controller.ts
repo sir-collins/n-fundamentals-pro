@@ -10,14 +10,19 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { SongsService, Paginated } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Song } from './entities/song.entity';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../users/entities/user.entity';
 
 /**
  * REST endpoints for the `songs` resource.
@@ -32,12 +37,19 @@ import { Song } from './entities/song.entity';
  * every call is awaited inside the `try` so a rejected query lands in the
  * `catch` block like any other error, instead of escaping as an unhandled
  * rejection.
+ *
+ * Reads (`findAll`, `findOne`) are public. Mutations (`create`, `update`,
+ * `delete`) require a logged-in `admin` — `AuthGuard('jwt')` runs first
+ * (populating `req.user`), then `RolesGuard` checks the role; order in
+ * `@UseGuards(...)` matters for that reason.
  */
 @Controller('songs')
 export class SongsController {
   constructor(private readonly songsService: SongsService) {}
 
-  /** Create a song. */
+  /** Create a song. Requires an authenticated `admin`. */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createSongDto: CreateSongDto): Promise<Song> {
@@ -86,10 +98,13 @@ export class SongsController {
   }
 
   /**
-   * Update a song by id. Only the supplied fields are changed.
+   * Update a song by id. Only the supplied fields are changed. Requires
+   * an authenticated `admin`.
    * @throws BadRequestException if the update payload is empty.
    * @throws NotFoundException if no song exists with `id`.
    */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Put(':id')
   @HttpCode(HttpStatus.OK)
   async update(
@@ -123,9 +138,11 @@ export class SongsController {
   }
 
   /**
-   * Delete a song by id.
+   * Delete a song by id. Requires an authenticated `admin`.
    * @throws NotFoundException if no song exists with `id`.
    */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {

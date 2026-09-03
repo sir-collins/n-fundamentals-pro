@@ -434,3 +434,63 @@ Verified end to end on scratch port 3001: `/auth/profile` with no
 fresh for `learner@example.com`, and calling `/auth/profile` with that
 token returned exactly `{ id: 3, email: "learner@example.com" }` — the
 real authenticated identity, not just "some 200 response."
+
+## 2026-09-03 — Project 3, step 4: Role-Based Access Control
+
+The distinction worth being precise about: everything through step 3 was
+*authentication* — "is this a real, logged-in user?" This step is
+*authorization* — "is this logged-in user allowed to do **this**?" Two
+different questions, and the status codes say so: a missing/invalid token
+is still `401` (we don't know who you are), but a real, authenticated user
+attempting something their role doesn't permit gets `403` (we know
+exactly who you are; the answer is no). `RolesGuard` throws
+`ForbiddenException` specifically to get that `403`, not `401`.
+
+`User` gained a `role` column (`'user'` | `'admin'`, default `'user'`).
+The one invariant that mattered most here: **signup can never hand out a
+role**. Not "signup validates the role field" — signup's underlying
+`UsersService.create(email, password)` has no role parameter *at all*, so
+there's no code path where a client-supplied value could even reach the
+database. Enforced by the type signature, not a runtime check that could
+be forgotten or bypassed.
+
+The mechanism is the standard Nest pattern: a `@Roles(...)` decorator that
+just attaches metadata to a route (`SetMetadata`), and a separate
+`RolesGuard` that reads that metadata back via `Reflector` and checks it
+against `req.user.role`. A route with no `@Roles(...)` isn't touched by
+the guard at all — opt-in per route, not a global default-deny. Since
+`role` needs to be checked on every request with no DB round trip (same
+"trust the token payload" design as `JwtStrategy` from last step), it now
+travels inside the JWT too — `AuthService.login`'s payload gained `role`,
+and `JwtStrategy.validate`'s returned `req.user` carries it. Small nice
+side effect: `GET /auth/profile` (which just echoes `req.user`) now shows
+the caller their own role for free.
+
+**Gotcha worth flagging in the code, not just here:** guard order in
+`@UseGuards(AuthGuard('jwt'), RolesGuard)` matters. `AuthGuard('jwt')`
+must run first to populate `req.user` — reversed, `RolesGuard` would read
+`req.user` before it exists.
+
+Applied it to something real rather than a throwaway route: `songs`
+mutations (`create`, `update`, `delete`) now require an authenticated
+`admin`; `findAll`/`findOne` stay exactly as public as they've always
+been. That contrast — same resource, different rules by both auth state
+and role — is what made this worth verifying end to end rather than
+trusting the types.
+
+One accepted gap, named rather than glossed over: there's no self-service
+way to *become* an admin. Verifying this step meant signing up a second
+test user normally (still lands as `'user'`, confirming the invariant
+above), then manually promoting it via a direct `psql UPDATE`. A real
+admin-management flow is out of scope for this learning step — same shape
+of deliberate gap as the orphaned `Artist` rows from Project 2.
+
+Verified end to end on scratch port 3001: `synchronize: true` added the
+`role` column (as a genuine Postgres enum type) cleanly, and the
+pre-existing `learner@example.com` row picked up the `'user'` default
+automatically, no manual backfill needed. `POST /songs` with no token
+401s; with `learner@example.com`'s real (`'user'`-role) token, `403`s
+with `"Insufficient role for this action"`; with the promoted admin's
+fresh token, `create`/`update`/`delete` all succeed normally. `GET
+/songs` and `GET /songs/:id` still need no token at all, unaffected.
+`GET /auth/profile` with the admin token now includes `"role":"admin"`.

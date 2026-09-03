@@ -22,10 +22,12 @@ export class AuthService {
    *
    * Fields are picked explicitly rather than destructuring `password` off
    * and returning the rest — an omit-style rest spread would silently
-   * start including any new field added to `User` later (a role, a phone
-   * number) unless someone remembered to exclude it too.
+   * start including any new field added to `User` later (a phone number,
+   * say) unless someone remembered to exclude it too. `role` is a case in
+   * point: deliberately left out of this response (not secret, just not
+   * needed here) — visible via a login token or `/auth/profile` instead.
    */
-  async signup(dto: SignupDto): Promise<Omit<User, 'password'>> {
+  async signup(dto: SignupDto): Promise<Pick<User, 'id' | 'email'>> {
     const user = await this.usersService.create(dto.email, dto.password);
     return { id: user.id, email: user.email };
   }
@@ -53,14 +55,17 @@ export class AuthService {
       return null;
     }
 
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, role: user.role };
   }
 
   // Not async: JwtService.sign is synchronous (a separate signAsync exists
   // for when that's actually needed) — this signature says what it does.
   /** Issue a signed JWT for an already-authenticated user. */
   login(user: Omit<User, 'password'>): { access_token: string } {
-    const payload = { sub: user.id, email: user.email };
+    // role travels inside the token itself — JwtStrategy trusts the
+    // payload directly (no DB lookup per request, see jwt.strategy.ts),
+    // so anything a guard needs to check has to be signed in here.
+    const payload = { sub: user.id, email: user.email, role: user.role };
     return { access_token: this.jwtService.sign(payload) };
   }
 }

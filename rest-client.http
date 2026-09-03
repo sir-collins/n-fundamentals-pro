@@ -98,3 +98,56 @@ Authorization: Bearer {{token}}
 
 ### Get my profile with no token (should 401)
 GET {{baseUrl}}/auth/profile
+
+### Sign up a second user, to promote to admin below
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "admin-candidate@example.com",
+  "password": "correcthorsebattery"
+}
+
+### Promote that user to admin — there's no API for this on purpose
+# (signup can never hand out a role). Run directly against Postgres:
+#   docker exec n-fundamentals-postgres psql -U nestjs -d n_fundamentals \
+#     -c "UPDATE \"user\" SET role = 'admin' WHERE email = 'admin-candidate@example.com';"
+
+### Log in as the (now-promoted) admin
+# access_token's payload includes role: "admin" — paste it below as @adminToken.
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin-candidate@example.com",
+  "password": "correcthorsebattery"
+}
+
+### Create a song as admin (should succeed)
+@adminToken = PASTE_ADMIN_ACCESS_TOKEN_HERE
+POST {{baseUrl}}/songs
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "title": "RBAC Test Song",
+  "artists": ["Test Artist"],
+  "releaseDate": "2024-01-01",
+  "duration": "00:03"
+}
+
+### Create a song as a regular (non-admin) user (should 403)
+# Reuse @token from the "Log in" block above (learner@example.com, role "user").
+POST {{baseUrl}}/songs
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "RBAC Test Song",
+  "artists": ["Test Artist"],
+  "releaseDate": "2024-01-01",
+  "duration": "00:03"
+}
+
+### Get all songs — still needs no token at all; reads stay public
+GET {{baseUrl}}/songs

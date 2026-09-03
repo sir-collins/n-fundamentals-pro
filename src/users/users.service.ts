@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
 
 // bcrypt's cost factor — how many rounds of hashing it does. Higher is
 // slower (both for an attacker brute-forcing guesses, and for us on every
@@ -29,9 +29,13 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    // Deliberately no role parameter on this method — every user created
+    // through signup is 'user', full stop. Nothing here can hand out
+    // 'admin' from client input.
     const user = this.usersRepository.create({
       email,
       password: hashedPassword,
+      role: UserRole.USER,
     });
     return this.usersRepository.save(user);
   }

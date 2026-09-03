@@ -14,7 +14,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @Controller('auth')
 export class AuthController {
@@ -26,7 +26,7 @@ export class AuthController {
    */
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
-  async signup(@Body() dto: SignupDto): Promise<Omit<User, 'password'>> {
+  async signup(@Body() dto: SignupDto): Promise<Pick<User, 'id' | 'email'>> {
     try {
       return await this.authService.signup(dto);
     } catch (error) {
@@ -66,10 +66,10 @@ export class AuthController {
    */
   @UseGuards(AuthGuard('jwt'))
   @Get('profile')
-  profile(@Req() req: Request & { user: { id: number; email: string } }): {
-    id: number;
-    email: string;
-  } {
+  profile(
+    @Req()
+    req: Request & { user: { id: number; email: string; role: UserRole } },
+  ): { id: number; email: string; role: UserRole } {
     return req.user;
   }
 }
