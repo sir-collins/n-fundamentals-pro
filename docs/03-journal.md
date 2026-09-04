@@ -562,3 +562,82 @@ authenticator app does — and confirmed the server accepted it:
 `isTwoFactorEnabled` flipped to `true` in Postgres, matching the API
 response. An obviously wrong code correctly `400`s. Both new routes still
 `401` with no token at all, confirming the JWT guard is still in force.
+
+## 2026-09-04 — Project 3, step 5b: enforcing 2FA at login
+
+The interesting design question wasn't "check the code," it was: after
+the password succeeds, how does the *next* request know whose account
+it's checking a code against, without the client just being able to say
+so? The wrong shortcut — accept a client-supplied user id alongside the
+code — would let an attacker skip the password step entirely, just
+guessing/enumerating ids and hammering codes against them. The actual
+pattern: `login` issues a short-lived (`5m`) `tempToken`, a JWT whose only
+job is proving "the password check for user N just succeeded, very
+recently." `POST /auth/2fa/authenticate` takes that token plus a code,
+verifies both, and only then mints a real `access_token`. The tempToken
+itself is the credential the second step trusts — nothing client-supplied
+is trusted blindly.
+
+Real security gap this step had to close, not just design around: that
+`tempToken` is still a validly-signed JWT, same secret as everything
+else. `JwtStrategy` — the thing every `AuthGuard('jwt')`-protected route
+goes through — had no concept of "kind of token." Before the fix, a
+`tempToken` would have sailed straight through `AuthGuard('jwt')` and
+worked as a real session on `/auth/profile`, the `admin`-only `songs`
+routes, everywhere — completely defeating 2FA while looking, on the
+surface, like it worked (login *did* refuse to hand out a real token
+directly). Caught this while writing the plan, before any code — but
+verification still treated it as unproven until actually demonstrated:
+took a real `tempToken` and threw it at `GET /auth/profile` directly, and
+only trusted the fix once that came back `401`. "I added a check" and "I
+watched the exploit fail" are different claims; only the second one
+counts as verified.
+
+Mechanically this meant widening the `Pick<User, ...>` type that flows
+`validateUser → login`/`LocalStrategy.validate`/the login handler's
+`req.user` (same ripple shape as 3.5a, now `+ 'isTwoFactorEnabled'`) so
+`login` has what it needs to decide which response shape to return.
+`login`'s return type became a real discriminated union —
+`{ access_token } | { twoFactorRequired: true; tempToken }` — which is a
+breaking change to that endpoint's response contract for any account with
+2FA on. That's not a bug to apologize for; it's what "enforce" has to
+mean once you take it seriously.
+
+One coincidence worth noting for future-me: `admin-candidate@example.com`
+turned out to already have 2FA enabled by the time this step was
+verified — not something this session did; presumably tested manually via
+`rest-client.http` against the always-running dev server between
+sessions. Good reminder the dev DB is shared, mutable state, not a fresh
+fixture each time — the "2FA-off" regression check used a brand-new
+signup instead of assuming any particular existing account's state.
+
+Verified end to end on scratch port 3001: logging in as
+`learner@example.com` (2FA on) returns `{ twoFactorRequired: true,
+tempToken }`, not a token. Pulled the real secret via `psql`, computed a
+real code with `otplib`, exchanged tempToken + code for a real
+`access_token` at `/auth/2fa/authenticate`; decoded it — exactly
+`{ sub, email, role, iat, exp }`, no `twoFactorPending`, and confirmed it
+actually works on `GET /auth/profile`. A wrong code `400`s; a garbage
+tempToken `401`s. The critical check: a *valid* tempToken thrown directly
+at `/auth/profile` also `401`s — the bypass is closed, demonstrated, not
+just asserted. A freshly signed-up (2FA-off) user still gets a direct
+`access_token` from login, unaffected.
+
+This completes the "Two-Factor Authentication" roadmap item. Also: this
+is the first step landing via the new branch + PR workflow (decided
+2026-09-04) instead of a direct push to `master`.
+
+**Postscript, same day:** the plaintext-secret trade-off flagged as a
+security gap in 3.5a turned out to matter practically almost immediately
+— the authenticator app entry for a test account got deleted by accident
+while manually testing this flow. Because the secret is recoverable
+straight from Postgres (`SELECT "twoFactorSecret" FROM "user" WHERE
+email = '...'`) and a fresh code computable from it with `otplib` in a
+one-line `node -e`, there was no actual lockout — just re-derive the
+current code and carry on. Worth being honest about both sides of this in
+the same breath: the exact thing that makes local testing/recovery this
+easy is the exact thing that would be a real problem if this secret were
+ever encrypted-at-rest in a real deployment and *lost* the same way (no
+recovery at all, by design — that's the point of encryption). Documented
+the recovery recipe prominently in `rest-client.http` itself, right next
+to where a code is needed, rather than leaving it implicit.

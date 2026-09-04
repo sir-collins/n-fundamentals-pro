@@ -105,21 +105,29 @@ prunes those yet.
       one; a promoted `'admin'`'s token succeeds on create/update/delete;
       `GET /songs` and `GET /songs/:id` still need no token at all;
       `GET /auth/profile` now surfaces the caller's own role.
-- [ ] Two-Factor Authentication — 🚧 in progress. `User` gains
-      `twoFactorSecret` (nullable, plain text — a known, deliberate gap,
-      same treatment as the JWT secret) and `isTwoFactorEnabled` (default
-      `false`). `POST /auth/2fa/generate` (JWT-protected) creates a TOTP
-      secret via `otplib` and returns it as a scannable QR code data URL;
-      `POST /auth/2fa/turn-on` confirms setup with a 6-digit code from the
-      user's authenticator app, only then flipping `isTwoFactorEnabled` —
-      proves the QR was actually scanned before 2FA starts being enforced
-      anywhere. A wrong code is `400` (identity/role aren't in question,
-      just whether the code matches). Deliberately **not yet enforced at
-      login** — `POST /auth/login` doesn't check `isTwoFactorEnabled` yet;
-      that's the remaining sub-step. Verified: generated a real secret,
-      computed a real TOTP code from it, confirmed the server accepts it
-      and `isTwoFactorEnabled` flips to `true` in Postgres; confirmed a
-      wrong code 400s and both routes still 401 with no token.
+- [x] Two-Factor Authentication — `User` gains `twoFactorSecret` (nullable,
+      plain text — a known, deliberate gap, same treatment as the JWT
+      secret) and `isTwoFactorEnabled` (default `false`). `POST
+      /auth/2fa/generate` (JWT-protected) creates a TOTP secret via
+      `otplib` and returns it as a scannable QR code; `POST
+      /auth/2fa/turn-on` confirms setup with a real code before flipping
+      `isTwoFactorEnabled`. **Enforced at login**: `POST /auth/login` for
+      a 2FA-enabled account now returns `{ twoFactorRequired: true,
+      tempToken }` instead of a real token — a short-lived (5 min) JWT
+      that proves the password check just succeeded for that specific
+      user, not a client-supplied id (which would let an attacker skip
+      the password check). `POST /auth/2fa/authenticate` (deliberately
+      unguarded — the caller has no real token yet) exchanges that
+      `tempToken` + a TOTP code for a real `access_token`. `JwtStrategy`
+      was updated to reject a `tempToken` outright — without that, it
+      would work as a full session on any `AuthGuard('jwt')`-protected
+      route, silently bypassing 2FA. Verified: a 2FA-enabled login
+      returns a `tempToken`, not a token; the real code exchanges it for
+      a normal `access_token` (confirmed working on `GET /auth/profile`);
+      a wrong code `400`s, a garbage `tempToken` `401`s; critically, a
+      *valid* `tempToken` used directly against `GET /auth/profile` also
+      `401`s, proving the bypass is actually closed, not just assumed; a
+      fresh non-2FA signup still logs in with a direct `access_token`.
 - [ ] API Key authentication
 
 ## Project 4: Production-Grade Setup — Not started

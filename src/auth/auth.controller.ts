@@ -9,6 +9,7 @@ import {
   InternalServerErrorException,
   Post,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -16,6 +17,7 @@ import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { TwoFactorCodeDto } from './dto/two-factor-code.dto';
+import { TwoFactorAuthenticateDto } from './dto/two-factor-authenticate.dto';
 import { User, UserRole } from '../users/entities/user.entity';
 
 @Controller('auth')
@@ -41,7 +43,10 @@ export class AuthController {
   }
 
   /**
-   * Log in with email + password, returning a signed JWT.
+   * Log in with email + password. Returns a signed JWT directly, unless
+   * the account has 2FA enabled — then it returns a short-lived
+   * `tempToken` instead, and the client must complete
+   * `POST /auth/2fa/authenticate` with a TOTP code to get a real token.
    *
    * `AuthGuard('local')` runs `LocalStrategy` before this body ever
    * executes — a bad credential pair 401s there, so the try/catch below
@@ -50,9 +55,12 @@ export class AuthController {
   @UseGuards(AuthGuard('local'))
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Req() req: Request & { user: Pick<User, 'id' | 'email' | 'role'> }): {
-    access_token: string;
-  } {
+  login(
+    @Req()
+    req: Request & {
+      user: Pick<User, 'id' | 'email' | 'role' | 'isTwoFactorEnabled'>;
+    },
+  ): { access_token: string } | { twoFactorRequired: true; tempToken: string } {
     try {
       return this.authService.login(req.user);
     } catch {
@@ -118,6 +126,39 @@ export class AuthController {
       }
 
       throw new InternalServerErrorException('Failed to turn on 2FA');
+    }
+  }
+
+  /**
+   * Second half of a 2FA login: exchange the `tempToken` from `login`
+   * plus a TOTP code for a real `access_token`. Deliberately no
+   * `@UseGuards` here — the caller doesn't have a real token yet, so
+   * `tempToken` is what's checked (manually, inside the service), not an
+   * `Authorization` header.
+   * @throws UnauthorizedException if `tempToken` is invalid/expired.
+   * @throws BadRequestException if `code` doesn't match.
+   */
+  @Post('2fa/authenticate')
+  @HttpCode(HttpStatus.OK)
+  async authenticateTwoFactor(
+    @Body() dto: TwoFactorAuthenticateDto,
+  ): Promise<{ access_token: string }> {
+    try {
+      return await this.authService.authenticateTwoFactor(
+        dto.tempToken,
+        dto.code,
+      );
+    } catch (error) {
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to authenticate with two-factor code',
+      );
     }
   }
 }
