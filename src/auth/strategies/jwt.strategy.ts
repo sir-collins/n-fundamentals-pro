@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JWT_SECRET } from '../auth.module';
@@ -26,11 +26,24 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(payload: { sub: number; email: string; role: UserRole }): {
-    id: number;
-    email: string;
-    role: UserRole;
-  } {
+  /**
+   * @throws UnauthorizedException if this is a short-lived `tempToken`
+   *   from a pending 2FA login rather than a real session — otherwise
+   *   it's still a validly-signed JWT and would silently work as a full
+   *   session on any guarded route, defeating 2FA entirely. This is the
+   *   one place every `AuthGuard('jwt')`-protected route goes through, so
+   *   the check belongs here rather than repeated per-route.
+   */
+  validate(payload: {
+    sub: number;
+    email?: string;
+    role?: UserRole;
+    twoFactorPending?: boolean;
+  }): { id: number; email: string; role: UserRole } {
+    if (payload.twoFactorPending || !payload.email || !payload.role) {
+      throw new UnauthorizedException('Invalid or incomplete session token');
+    }
+
     return { id: payload.sub, email: payload.email, role: payload.role };
   }
 }
