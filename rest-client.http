@@ -242,3 +242,74 @@ Content-Type: application/json
 # Proves the tempToken can't be used to bypass 2FA on a guarded route.
 GET {{baseUrl}}/auth/profile
 Authorization: Bearer {{tempToken}}
+
+### API keys, step 1: sign up + log in a plain (non-2FA) user to mint a key with
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "apikey-user@example.com",
+  "password": "correcthorsebattery"
+}
+
+###
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "apikey-user@example.com",
+  "password": "correcthorsebattery"
+}
+
+### API keys, step 2: mint a key (needs a real JWT, not an API key —
+# minting requires AuthGuard('jwt') on purpose, so a leaked key can't be
+# used to mint its own unlimited replacements).
+# Response is { id, apiKey } — apiKey is the raw key, shown here ONCE.
+# Only its SHA-256 hash is stored; losing this response means generating
+# a new key, not recovering this one.
+@apiKeyToken = PASTE_ACCESS_TOKEN_HERE
+POST {{baseUrl}}/auth/api-keys
+Content-Type: application/json
+Authorization: Bearer {{apiKeyToken}}
+
+{
+  "label": "CI key"
+}
+
+### List my API keys (metadata only — id, label, createdAt, lastUsedAt;
+# never the raw key or its hash). lastUsedAt starts null.
+GET {{baseUrl}}/auth/api-keys
+Authorization: Bearer {{apiKeyToken}}
+
+### Identify myself using the API key alone — ApiKeyGuard only, no JWT
+# involved at all. Response is deliberately the same shape as
+# GET /auth/profile: same identity, a different mechanism proving it.
+@rawApiKey = PASTE_RAW_API_KEY_HERE
+GET {{baseUrl}}/auth/api-keys/whoami
+x-api-key: {{rawApiKey}}
+
+### Re-list my keys — lastUsedAt should now be set, proving the guard's
+# lookup (and its lastUsedAt update) actually ran on the request above.
+GET {{baseUrl}}/auth/api-keys
+Authorization: Bearer {{apiKeyToken}}
+
+### whoami with a garbage key (should 401)
+GET {{baseUrl}}/auth/api-keys/whoami
+x-api-key: not-a-real-key
+
+### whoami with no x-api-key header at all (should 401)
+GET {{baseUrl}}/auth/api-keys/whoami
+
+### Revoke the key (paste the id from the "mint a key" response above)
+DELETE {{baseUrl}}/auth/api-keys/PASTE_KEY_ID_HERE
+Authorization: Bearer {{apiKeyToken}}
+
+### whoami again with the same now-revoked key (should 401) — proves
+# revocation actually removes access, not just the list entry.
+GET {{baseUrl}}/auth/api-keys/whoami
+x-api-key: {{rawApiKey}}
+
+### Revoke a key that isn't mine, or doesn't exist (should 404 either
+# way — a revoke attempt can't be used to probe which ids exist)
+DELETE {{baseUrl}}/auth/api-keys/999999
+Authorization: Bearer {{apiKeyToken}}

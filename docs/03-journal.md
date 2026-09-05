@@ -641,3 +641,75 @@ ever encrypted-at-rest in a real deployment and *lost* the same way (no
 recovery at all, by design — that's the point of encryption). Documented
 the recovery recipe prominently in `rest-client.http` itself, right next
 to where a code is needed, rather than leaving it implicit.
+
+## 2026-09-04 — Project 3, step 3.6: API Key authentication (Project 3 complete)
+
+Last item on Project 3's list, and a deliberately different shape of auth
+from everything before it — signup, login, JWT sessions, and 2FA are all
+*human* auth (a person typing a password, reading a phone). API keys are
+for the case with no human present at all: a script, a cron job, another
+service. A static credential sent on every request instead.
+
+**Why SHA-256 for the key, not bcrypt, when every other secret in this app
+uses bcrypt:** bcrypt's slowness exists to make brute-forcing a low-entropy
+human password expensive. A random 32-byte key has nothing for that
+slowness to meaningfully defend against — it's already unguessable. More
+important, bcrypt actively can't do what this needs: every `bcrypt.hash()`
+call embeds a fresh random salt, so the same input hashes to a different
+output each time, which makes a direct `WHERE hashedKey = ?` lookup
+impossible — you'd have to load every stored key and `bcrypt.compare()`
+against each one just to authenticate a single request. SHA-256 is
+deterministic, so the incoming key always hashes to the same value, and a
+plain indexed lookup (the `unique: true` constraint on `hashedKey` is that
+index) works. Different secret, different threat model, different tool —
+not a downgrade from bcrypt, a different job.
+
+**Why `ApiKeyGuard` is a plain `CanActivate`, not another Passport
+strategy:** Passport's abstraction earns its keep for local/JWT auth
+because both plug into a shared "extract a credential, verify it, hand
+back an identity" pipeline with real complexity (parsing an
+`Authorization` header, checking a signature and expiry). A header lookup
++ hash + DB row match doesn't need that machinery — writing it as a
+direct Nest guard is simpler and, as a side effect, is a good look at the
+*other* way Nest lets a route gate itself, not routed through Passport at
+all. The guard still sets `request.user` to the exact same `{ id, email,
+role }` shape `JwtStrategy.validate` produces, so nothing downstream
+(`RolesGuard` included, though not exercised by this step) can tell which
+mechanism actually authenticated the request.
+
+**Why minting/listing/revoking a key requires a full JWT session, not
+`ApiKeyGuard`:** if an API key could be used to mint more API keys, a
+single leaked key would let an attacker mint unlimited replacements for
+itself even after the original was revoked — key management has to sit
+behind a stronger guarantee (a real login) than the thing it manages.
+
+**Why revoking someone else's key id returns the same `404` as a
+nonexistent one:** returning a `403` for "exists, but not yours" would
+let a caller enumerate which key ids are in use by watching the status
+code change. Treating both cases identically (`ApiKeysService.revoke`
+checks existence and ownership together) costs nothing and closes that
+off — same instinct as `AuthService.validateUser` returning `null` for
+both "no such email" and "wrong password" rather than distinguishing them.
+
+Verified end to end on scratch port 3001: minted a key for a fresh user,
+confirmed via direct `psql` that only a 64-character SHA-256 hex digest is
+stored — computed the hash of the raw returned key independently and
+confirmed it matched exactly. `GET /auth/api-keys/whoami` with just the
+`x-api-key` header (no `Authorization` header at all) returned `{ id,
+email, role }` identical to that same user's `GET /auth/profile` response
+— same identity, proven two different ways. A garbage key and a missing
+header both `401`, with distinct messages. `lastUsedAt` was `null`
+immediately after minting and became a real timestamp after the `whoami`
+call, proving the guard's DB update path actually ran, not just the
+lookup. Revoked the key, then — the critical check — hit `whoami` again
+with the *exact same* raw key: `401`, proving revocation actually removes
+access rather than just deleting the list entry. Signed up a second user
+and had them attempt to revoke the first user's key: `404`, and the key
+was confirmed still live for its real owner afterward, proving the delete
+never happened rather than just trusting the status code.
+
+This completes Project 3 — signup, login, JWT sessions, RBAC, 2FA
+enforced at login, and now API keys, all verified end to end rather than
+assumed to work from reading the code. Project 4 (production-grade setup:
+environment config, replacing the hardcoded JWT secret and Postgres
+credentials, migrations instead of `synchronize: true`) is next.

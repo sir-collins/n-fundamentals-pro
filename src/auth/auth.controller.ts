@@ -3,10 +3,14 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   InternalServerErrorException,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
   Post,
   Req,
   UnauthorizedException,
@@ -15,14 +19,21 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
+import { ApiKeysService } from './api-keys.service';
+import { ApiKeyGuard } from './guards/api-key.guard';
 import { SignupDto } from './dto/signup.dto';
 import { TwoFactorCodeDto } from './dto/two-factor-code.dto';
 import { TwoFactorAuthenticateDto } from './dto/two-factor-authenticate.dto';
+import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { ApiKey } from './entities/api-key.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly apiKeysService: ApiKeysService,
+  ) {}
 
   /**
    * Register a new user.
@@ -159,6 +170,79 @@ export class AuthController {
       throw new InternalServerErrorException(
         'Failed to authenticate with two-factor code',
       );
+    }
+  }
+
+  /**
+   * Mint a new API key for the caller. Guarded by `AuthGuard('jwt')`, not
+   * `ApiKeyGuard` — deliberately: minting a key must require a real login
+   * session, or a single leaked key could mint unlimited replacements for
+   * itself. The raw key is only ever returned here — only its hash is
+   * stored, so losing this response means generating a new key, not
+   * recovering the old one.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('api-keys')
+  @HttpCode(HttpStatus.CREATED)
+  async createApiKey(
+    @Req() req: Request & { user: { id: number } },
+    @Body() dto: CreateApiKeyDto,
+  ): Promise<{ id: number; apiKey: string }> {
+    try {
+      return await this.apiKeysService.generate(req.user.id, dto.label);
+    } catch {
+      throw new InternalServerErrorException('Failed to create API key');
+    }
+  }
+
+  /** List the caller's own API keys — metadata only, never the raw key or hash. */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('api-keys')
+  async listApiKeys(
+    @Req() req: Request & { user: { id: number } },
+  ): Promise<Pick<ApiKey, 'id' | 'label' | 'createdAt' | 'lastUsedAt'>[]> {
+    try {
+      return await this.apiKeysService.listForUser(req.user.id);
+    } catch {
+      throw new InternalServerErrorException('Failed to list API keys');
+    }
+  }
+
+  /**
+   * Identify the caller by API key alone — `ApiKeyGuard` only, no JWT
+   * involved. Deliberately the same response shape as `GET /auth/profile`:
+   * same identity, different auth mechanism proving it.
+   */
+  @UseGuards(ApiKeyGuard)
+  @Get('api-keys/whoami')
+  whoami(
+    @Req()
+    req: Request & { user: { id: number; email: string; role: UserRole } },
+  ): { id: number; email: string; role: UserRole } {
+    return req.user;
+  }
+
+  /**
+   * Revoke one of the caller's own API keys.
+   * @throws NotFoundException if the id doesn't exist, or belongs to
+   *   someone else — `ApiKeysService.revoke` treats both cases alike.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('api-keys/:id')
+  @HttpCode(HttpStatus.OK)
+  async revokeApiKey(
+    @Req() req: Request & { user: { id: number } },
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ message: string }> {
+    try {
+      await this.apiKeysService.revoke(req.user.id, id);
+      return { message: 'API key revoked' };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Failed to revoke API key');
     }
   }
 }
