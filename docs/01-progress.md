@@ -54,7 +54,7 @@ gap, not pursued (out of scope for this project): an `Artist` removed from
 every song it was on stays in the table as an orphaned row — nothing
 prunes those yet.
 
-## Project 3: Authentication & Authorization — 🚧 In progress
+## Project 3: Authentication & Authorization — ✅ Done
 
 - [x] User Signup — `POST /auth/signup`. New `User` entity
       (`src/users/entities/user.entity.ts`); `UsersService.create` hashes
@@ -128,7 +128,34 @@ prunes those yet.
       *valid* `tempToken` used directly against `GET /auth/profile` also
       `401`s, proving the bypass is actually closed, not just assumed; a
       fresh non-2FA signup still logs in with a direct `access_token`.
-- [ ] API Key authentication
+- [x] API Key authentication — new `ApiKey` entity
+      (`src/auth/entities/api-key.entity.ts`), `ApiKeysService`
+      (`src/auth/api-keys.service.ts`), and a deliberately non-Passport
+      `ApiKeyGuard` (`src/auth/guards/api-key.guard.ts`). `POST
+      /auth/api-keys` (JWT-protected) mints a random 32-byte key, shows
+      it exactly once, and stores only its SHA-256 hash (not bcrypt —
+      the key is already high-entropy, and SHA-256's determinism is what
+      makes a direct indexed lookup possible at all). `GET
+      /auth/api-keys` lists a caller's own keys (metadata only); `DELETE
+      /auth/api-keys/:id` revokes one, `404`ing identically whether the
+      id doesn't exist or belongs to someone else. `GET
+      /auth/api-keys/whoami` is guarded by `ApiKeyGuard` alone (no JWT
+      at all) and returns the same `{ id, email, role }` shape as `GET
+      /auth/profile` — same identity, a different mechanism proving it.
+      Verified: minted a key, confirmed only its hash lives in Postgres;
+      `whoami` with the raw key matches `/auth/profile`'s response for
+      the same user; a garbage key and a missing header both `401`;
+      `lastUsedAt` updates on use; after revoking, the same key `401`s
+      (not just removed from the list); a second user attempting to
+      revoke the first user's key `404`s without leaking that the key
+      exists. Completes Project 3.
+
+**Outcome achieved:** a full, layered auth system — password login,
+JWT sessions, role-based route restriction, TOTP two-factor
+authentication enforced at login, and API keys for machine-to-machine
+access — each mechanism verified end to end with real HTTP calls, real
+crypto, and (where relevant) a deliberately demonstrated attack proven
+closed rather than just asserted to be.
 
 ## Project 4: Production-Grade Setup — Not started
 
