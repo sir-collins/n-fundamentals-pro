@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { JWT_SECRET } from '../auth.module';
 import { UserRole } from '../../users/entities/user.entity';
 
 /**
@@ -18,11 +18,15 @@ import { UserRole } from '../../users/entities/user.entity';
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor() {
+  constructor(configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: JWT_SECRET,
+      // Read directly from validated config rather than importing a
+      // shared literal from auth.module.ts — JwtModule.registerAsync
+      // there reads the same JWT_SECRET key, so signing and verifying
+      // still can't silently drift onto different values.
+      secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
     });
   }
 

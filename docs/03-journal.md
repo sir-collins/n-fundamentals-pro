@@ -713,3 +713,78 @@ enforced at login, and now API keys, all verified end to end rather than
 assumed to work from reading the code. Project 4 (production-grade setup:
 environment config, replacing the hardcoded JWT secret and Postgres
 credentials, migrations instead of `synchronize: true`) is next.
+
+## 2026-09-06 — Project 4, step 1: custom configuration + validated env vars
+
+First Project 4 step: replacing the two hardcoded secrets that Project 3
+kept flagging and deferring — `JWT_SECRET` in `auth.module.ts`, and the
+full Postgres connection block in `app.module.ts` — with `@nestjs/config`
++ a Joi validation schema.
+
+**The point wasn't just "move the strings to a `.env` file."** A `.env`
+file that's silently allowed to be incomplete is barely better than a
+hardcoded literal — you just trade "wrong value, visible in the diff" for
+"missing value, `undefined` at runtime, failing confusingly three layers
+away from the actual cause." `ConfigModule.forRoot({ validationSchema })`
+means a missing or malformed required variable fails **at boot**, loudly,
+with a message that names the exact variable — closer to a compile error
+than a runtime surprise. Verified this is real, not just configured:
+commented out `JWT_SECRET` in `.env`, rebooted, and got exactly `Config
+validation error: "JWT_SECRET" is required` before the app ever finished
+`NestFactory.create` — confirmed via `curl` that nothing was actually
+listening on the port (connection refused), not just an error printed to
+a log while the server kept running anyway. Restored `.env`, rebooted,
+normal operation resumed.
+
+**Another instance of this project's recurring dependency-pin lesson:**
+checked the registry before installing (now reflexive after otplib,
+`@nestjs/jwt`, `@nestjs/passport`, and `@nestjs/typeorm` all turned out to
+have ESM-only latest majors) — `@nestjs/config`'s latest, `12.x`, is
+`"type": "module"`, same trap. Its last CommonJS major is `4.x`
+(`4.0.4`), still compatible with this project's Nest v11 core. Pinned
+that instead of latest, then immediately ran `tsc`/`jest` right after
+`npm install` and before writing any new code, specifically to catch a
+breakage at the cheapest possible point if the pin were wrong.
+
+**`JWT_SECRET` got a real value, not a renamed placeholder.** The old
+hardcoded `'CHANGE_ME_DEV_ONLY_SECRET'` string could have just been
+copy-pasted into `.env` unchanged — technically "moved to an env var,"
+but still a well-known, guessable value. Generated a fresh random 32-byte
+hex string with `crypto.randomBytes` instead, so the local `.env` holds
+something that's actually a secret. Every token issued before this change
+stopped verifying the moment the secret changed — expected, not a
+regression (session tokens are short-lived and dev-only; nothing to
+migrate).
+
+**Where each value now comes from:** `app.module.ts`'s
+`TypeOrmModule.forRoot` and `auth.module.ts`'s `JwtModule.register` both
+moved to their `*Async` counterparts (`forRootAsync`/`registerAsync`),
+injecting `ConfigService` to read connection details and `JWT_SECRET`
+respectively — both needed to happen at module-construction time, after
+`ConfigModule` (registered `isGlobal: true`, so no per-module re-import
+needed) has validated and loaded everything. `JwtStrategy` — previously
+importing a shared `JWT_SECRET` constant exported from `auth.module.ts`
+— now injects `ConfigService` directly and reads the same key itself.
+Signing and verifying still can't silently drift onto different values
+(same guarantee the old shared-constant approach gave), just sourced from
+validated config instead of a shared literal.
+
+**One existing behavior worth confirming didn't break:** this project's
+whole scratch-port testing pattern depends on `PORT=3001 npm run
+start:dev` overriding the default port. `@nestjs/config`'s underlying
+`dotenv` load doesn't override a variable already present in the shell
+environment by default — confirmed this holds: with `.env`'s `PORT=3000`
+in place, `PORT=3001` on the command line still won and the scratch
+server came up on 3001, not 3000.
+
+Regression-checked (not just "it compiles," since the actual logic in
+every handler is unchanged — only *where* secrets come from):
+signup → login → a fresh JWT working on `GET /auth/profile`, and minting
++ using an API key against `GET /auth/api-keys/whoami` — both prove the
+Postgres connection and JWT signing/verification are genuinely live
+through the new config path.
+
+Explicitly deferred, as already discussed: hardening `docker-compose.yml`
+itself (its hardcoded Postgres credentials are a separate concern from
+what the *app* hardcodes), and making the JWT `expiresIn` policy
+configurable (a policy choice, not a secret).
