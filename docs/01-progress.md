@@ -157,7 +157,39 @@ access — each mechanism verified end to end with real HTTP calls, real
 crypto, and (where relevant) a deliberately demonstrated attack proven
 closed rather than just asserted to be.
 
-## Project 4: Production-Grade Setup — Not started
+## Project 4: Production-Grade Setup — 🚧 In progress
+
+- [x] Custom configuration + validated environment variables —
+      `@nestjs/config` (pinned `^4.0.4` — its latest major, `12.x`, is
+      ESM-only and breaks `ts-jest`, same trap as several Project 3
+      dependencies) + a Joi schema (`src/config/env.validation.ts`).
+      `JWT_SECRET`/`DB_HOST`/`DB_USERNAME`/`DB_PASSWORD`/`DB_NAME` are
+      required with no default — a missing one now makes the app refuse
+      to boot with a clear error, instead of silently running with
+      `undefined`. `PORT`/`DB_PORT` keep sensible defaults (`3000`/`5432`)
+      matching prior behavior. `app.module.ts`'s `TypeOrmModule.forRoot`
+      and `auth.module.ts`'s `JwtModule.register` both moved to their
+      `*Async` forms, reading connection details and `JWT_SECRET` from
+      `ConfigService` instead of hardcoded literals; `JwtStrategy` now
+      injects `ConfigService` directly rather than importing a shared
+      exported constant. `.env` (real dev values, a freshly generated
+      random `JWT_SECRET` — not the old placeholder string) is
+      gitignored (already covered by an existing `.gitignore` rule);
+      `.env.example` is committed with placeholder values. Verified:
+      commenting out `JWT_SECRET` in `.env` and rebooting produced a real
+      `Config validation error: "JWT_SECRET" is required` before the app
+      ever listened (confirmed via `curl` — connection refused, nothing
+      bound to the port); restoring `.env` resumed a normal boot;
+      signup/login/`GET /auth/profile`/API-key `whoami` all still work
+      unchanged, proving both the Postgres connection and JWT
+      signing/verification genuinely work through the new config path,
+      not just "it compiles"; `PORT=3001` as a shell env var still wins
+      over `.env`'s `PORT=3000` (dotenv doesn't override an
+      already-set variable), so scratch-port testing is unaffected.
+- [ ] Debugging a NestJS app
+- [ ] Migrations (instead of auto-sync) + Seeding sample data
+- [ ] Hot Module Reloading for faster dev loop
+- [ ] Swagger/OpenAPI docs, including documenting auth flows
 
 ## Project 5: Add MongoDB Alongside SQL — Not started
 
