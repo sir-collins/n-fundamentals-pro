@@ -35,10 +35,13 @@ import { envValidationSchema } from './config/env.validation';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
         entities: [Song, Artist, User, ApiKey],
-        // Auto-creates/alters tables to match entities — convenient in dev,
-        // unsafe in prod (can silently drop/alter columns). Migrations
-        // (Project 4) replace this once schema changes need to be reviewable.
-        synchronize: true,
+        // Schema changes now go through explicit, committed migrations
+        // (npm run migration:generate/run/revert — see
+        // src/database/data-source.ts and src/database/migrations/)
+        // instead of auto-syncing on every boot. Deliberately no
+        // migrationsRun here either — running a migration stays a
+        // conscious step, not something that happens silently at startup.
+        synchronize: false,
       }),
     }),
     SongsModule,

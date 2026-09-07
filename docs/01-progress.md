@@ -187,7 +187,33 @@ closed rather than just asserted to be.
       over `.env`'s `PORT=3000` (dotenv doesn't override an
       already-set variable), so scratch-port testing is unaffected.
 - [ ] Debugging a NestJS app
-- [ ] Migrations (instead of auto-sync) + Seeding sample data
+- [x] Migrations (instead of auto-sync) + Seeding sample data —
+      `synchronize: true` → `false` in `app.module.ts`. A separate plain
+      `DataSource` (`src/database/data-source.ts`, using `dotenv`
+      directly — TypeORM's CLI runs outside Nest's DI and can't inject
+      `ConfigService`) backs new `migration:generate`/`run`/`revert` npm
+      scripts. The initial migration
+      (`src/database/migrations/*-InitialSchema.ts`) was generated
+      against a genuinely empty Postgres (`docker compose down -v && up
+      -d` — diffing against the old `synchronize`-built DB would've
+      produced an empty migration, since it already matched) and
+      verified column-for-column identical to the pre-migration schema,
+      including matching auto-generated constraint names. A seed script
+      (`src/database/seed.ts`, `npm run seed`) uses
+      `NestFactory.createApplicationContext` to insert demo rows through
+      real service methods (`UsersService.create`, `SongsService.create`)
+      rather than raw SQL — one demo user, one promoted to `admin` via a
+      direct repository write (the same out-of-band pattern
+      `rest-client.http` already documents for real accounts;
+      `UsersService.create` deliberately still has no `role` parameter),
+      and a sample song. Re-running `npm run seed` skips existing users
+      instead of crashing. Verified: full regression pass (signup, login,
+      JWT profile, API key `whoami`) against the migration-built schema;
+      `migration:revert` genuinely drops every table it created (checked
+      via `psql`), and `migration:run` restores them; a throwaway column
+      added to `Song` and booted did **not** get auto-added to Postgres,
+      proving `synchronize` is actually off, not just set to `false` and
+      trusted.
 - [ ] Hot Module Reloading for faster dev loop
 - [ ] Swagger/OpenAPI docs, including documenting auth flows
 

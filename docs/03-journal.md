@@ -788,3 +788,79 @@ Explicitly deferred, as already discussed: hardening `docker-compose.yml`
 itself (its hardcoded Postgres credentials are a separate concern from
 what the *app* hardcodes), and making the JWT `expiresIn` policy
 configurable (a policy choice, not a secret).
+
+## 2026-09-07 — Project 4, step 2: migrations + seeding
+
+Second Project 4 step: turning off `synchronize: true`, which had been
+flagged as a known risk since Project 2 ("can silently drop/alter
+columns... Migrations replace this once schema changes need to be
+reviewable").
+
+**The CLI doesn't share the app's DI container.** `TypeOrmModule.forRootAsync`
+in `app.module.ts` reads connection details from `ConfigService`, but
+TypeORM's own CLI (`typeorm-ts-node-commonjs`) runs as a standalone
+script — it can't inject anything from Nest. It needs its own plain
+`DataSource`, so `src/database/data-source.ts` loads `.env` directly via
+`dotenv/config` instead. Hit one real error here: giving that file both
+a named export and a `export default` of the same `DataSource` instance
+made the CLI refuse to load it ("must contain only one export of
+DataSource instance") — it counts each export binding, not each distinct
+object. Fixed by keeping exactly one export.
+
+**The gotcha that mattered most: you can't generate a real migration from
+a `synchronize`-built database.** `migration:generate` works by diffing
+entities against the live schema — if `synchronize: true` already made
+the DB match, the diff is empty. There's nothing wrong with the tool;
+it's correctly reporting "nothing needs to change" against a database
+that's already caught up. Worked around it by actually resetting local
+Postgres to nothing (`docker compose down -v && up -d` — a real, if
+low-stakes, data loss, already flagged to and accepted by the user before
+doing it) and generating the *first* migration against a genuinely empty
+database. Verified the result matters more than trusting the process:
+captured `\d` output for every table before the reset, generated +ran the
+migration, captured `\d` again, and diffed the two — identical, down to
+the same auto-generated constraint names Postgres/TypeORM had picked
+before. The only new thing was TypeORM's own `migrations` bookkeeping
+table, which is supposed to be there.
+
+**Two more things proven, not just configured:**
+- `migration:revert` actually reverses the migration, not just prints a
+  success message: ran it once, confirmed via `psql` that every table it
+  had created was genuinely gone (`\dt` showed only the bookkeeping
+  table), then `migration:run` again to restore.
+- `synchronize` is actually off, not just set to `false` and trusted:
+  added a throwaway nullable column to `Song`, let the app boot normally
+  against the mismatched schema (it doesn't care — TypeORM only maps
+  columns it's told to query), and confirmed via `psql` the column never
+  appeared in Postgres. Reverted the entity change immediately —
+  never committed.
+
+**Seeding respected a security boundary already established in Project
+3, rather than punching a hole in it for convenience.** `UsersService.create`
+deliberately has no `role` parameter — its own doc comment says "nothing
+here can hand out `'admin'` from client input," and that's true regardless
+of whether the caller is an HTTP request or a local script. Adding a
+`role` argument to `create()` just to make seeding an admin account
+easier would have quietly widened that method's contract for every other
+caller too. Instead, `src/database/seed.ts` calls `usersService.create()`
+for the hashing/dedup logic (still real business logic, not a raw SQL
+insert), then promotes the account via a direct
+`Repository<User>.update()` — the exact same out-of-band pattern
+`rest-client.http` already documents for real admin promotion. The
+security boundary isn't "no code path can ever set `role: 'admin'`," it's
+"no code path *reachable from client input* can" — a local dev script run
+by whoever already has full DB access was never inside that boundary.
+
+Seeding itself boots the full Nest DI container with no HTTP listener
+(`NestFactory.createApplicationContext`), so `UsersService`/`SongsService`
+run exactly as they do in the real app — password hashing, duplicate-email
+checks, artist name resolution, all still enforced. Made it idempotent
+for users (catch `ConflictException`, log "already exists, skipping"
+instead of crashing) since a learner re-running `npm run seed` on a
+half-seeded or already-seeded DB is a realistic, non-error case; left
+song re-seeding as a known, accepted gap (no uniqueness constraint on
+title, so re-running would duplicate the sample song) rather than adding
+dedup logic to `SongsService` just for a seed script's benefit.
+
+This completes the second Project 4 item. Remaining: debugging tooling,
+hot module reloading, and Swagger/OpenAPI docs.
