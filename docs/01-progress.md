@@ -228,12 +228,3 @@ closed rather than just asserted to be.
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
 ## Project 10: Capstone — Advanced Feature Grab Bag — Not started
-
----
-
-## Known gaps / notes (not roadmap items, just worth remembering)
-
-- `app.controller.spec.ts` has a pre-existing, unrelated failing test
-  (expects the default Nest scaffold greeting `"Hello World!"`, but
-  `AppController` now returns `"Hello I am learning nestjs!"`). Left alone —
-  not part of the `songs` work this roadmap is tracking.

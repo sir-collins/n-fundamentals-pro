@@ -864,3 +864,14 @@ dedup logic to `SongsService` just for a seed script's benefit.
 
 This completes the second Project 4 item. Remaining: debugging tooling,
 hot module reloading, and Swagger/OpenAPI docs.
+
+## 2026-09-07 — Fixing the stale `app.controller.spec.ts` failure
+
+Small, unrelated housekeeping item, deliberately its own commit rather
+than folded into a roadmap step: `AppController.getHello()` has returned
+`'Hello I am learning nestjs!'` since very early in this project (a
+deliberate customization, not a bug), but `app.controller.spec.ts` still
+asserted the original Nest-scaffold default, `'Hello World!'` — the test
+was just never updated when the greeting changed. Updated the assertion
+to match the real, intended behavior. `npx jest` now passes all 3 suites
+clean for the first time this project has had zero failing tests.
