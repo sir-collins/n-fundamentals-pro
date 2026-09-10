@@ -186,7 +186,22 @@ closed rather than just asserted to be.
       not just "it compiles"; `PORT=3001` as a shell env var still wins
       over `.env`'s `PORT=3000` (dotenv doesn't override an
       already-set variable), so scratch-port testing is unaffected.
-- [ ] Debugging a NestJS app
+- [x] Debugging a NestJS app — `.vscode/launch.json` with an "Attach to
+      Nest (start:debug)" config (`type: node`, `request: attach`, port
+      `9229`, `restart: true` so it reattaches automatically when
+      `start:debug`'s `--watch` restarts the process). No app code or
+      dependencies changed — the inspector port was already available via
+      the scaffold's existing `start:debug` script
+      (`nest start --debug --watch`); this just wires VS Code to it.
+      Verified: `npm run start:debug` boots normally and prints the
+      `Debugger listening on ws://...:9229` line; attaching in VS Code shows
+      "Debugger attached"; a breakpoint set inside
+      `RolesGuard.canActivate` actually paused a real `PUT /songs` request
+      made with a `user`-role token, with `request.user` and the resolved
+      required roles inspectable live before resuming to the expected
+      `403`; saving a watched file mid-session triggered a `--watch`
+      restart with automatic reattach, no manual re-attach needed;
+      `start:dev`/`start:prod` remained unaffected.
 - [x] Migrations (instead of auto-sync) + Seeding sample data —
       `synchronize: true` → `false` in `app.module.ts`. A separate plain
       `DataSource` (`src/database/data-source.ts`, using `dotenv`
