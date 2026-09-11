@@ -229,7 +229,37 @@ closed rather than just asserted to be.
       added to `Song` and booted did **not** get auto-added to Postgres,
       proving `synchronize` is actually off, not just set to `false` and
       trusted.
-- [ ] Hot Module Reloading for faster dev loop
+- [x] Hot Module Reloading for faster dev loop — new `start:hmr` script,
+      `webpack-hmr.config.js` (standard Nest HMR webpack config:
+      `webpack-node-externals` keeps `node_modules` external,
+      `HotModuleReplacementPlugin` + `RunScriptWebpackPlugin` drive the
+      update), and a `module.hot.accept()`/`dispose()` block added to
+      `main.ts`. `start:dev`/`start:debug`/`start:prod`/`nest build` are
+      untouched — this is a separate, additive dev-loop option.
+      **Deliberately uses `nest build --webpack --watch`, not `nest start
+      --webpack --watch`** as Nest's own docs show: read `@nestjs/cli`'s
+      source directly and confirmed `StartAction` unconditionally spawns
+      `dist/main.js` itself on every successful compile
+      (`createOnSuccessHook`/`spawnChildProcess`), with zero awareness of a
+      config-supplied `RunScriptWebpackPlugin` — so `nest start` runs the
+      bundle *twice* (once via its own spawner, once via our plugin),
+      losing the port race with a real `EADDRINUSE` crash every time.
+      `BuildAction` never wires up that spawner, so `nest build --watch`
+      leaves `RunScriptWebpackPlugin` as the sole runner — verified this
+      concretely (two Nest PIDs raced port 3000 under `nest start`; exactly
+      one PID, no crash, under `nest build`). Verified further: a comment
+      edit round-tripped through `[HMR] Nothing hot updated.` (TS strips
+      comments at compile time — no real code changed, so nothing to
+      apply); a real code change (edited `AppService.getHello`'s return
+      string) triggered a genuine incremental rebuild (`~380ms` vs. the
+      cold build's `~3.5s`) and `curl localhost:3000/` served the new
+      string immediately — all inside the **same OS process** (PID
+      unchanged throughout, confirmed via `ps`), no fork/respawn. Being
+      precise about what "hot" actually means here: `module.hot.dispose(()
+      => app.close())` still tears down and fully rebuilds the whole Nest
+      application context (DB pool included) on every change — the win is
+      "no OS-level process fork + fast incremental compile," not "runtime
+      state survives edits."
 - [ ] Swagger/OpenAPI docs, including documenting auth flows
 
 ## Project 5: Add MongoDB Alongside SQL — Not started
