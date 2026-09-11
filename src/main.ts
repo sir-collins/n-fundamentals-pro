@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 // Only ever populated when running under webpack (start:hmr) — narrowly
@@ -23,6 +24,29 @@ async function bootstrap() {
   // class-validator runs — required for PaginationQueryDto to work.
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Two independent, named security schemes — this API supports both a
+  // JWT bearer token and an `x-api-key` header as separate auth
+  // mechanisms, and Swagger UI's "Authorize" modal needs a scheme name
+  // per mechanism to show a separate input for each. `addBearerAuth()`'s
+  // default scheme name ('bearer') matches `@ApiBearerAuth()` used with
+  // no arguments; the API key scheme is named 'api-key' to match
+  // `@ApiSecurity('api-key')`.
+  const swaggerDocument = SwaggerModule.createDocument(
+    app,
+    new DocumentBuilder()
+      .setTitle('n-fundamentals-pro API')
+      .setDescription(
+        'A NestJS learning project: songs/artists CRUD behind a layered ' +
+          'auth system (password + JWT, roles, 2FA, API keys).',
+      )
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'api-key')
+      .build(),
+  );
+  SwaggerModule.setup('api', app, swaggerDocument);
+
   const configService = app.get(ConfigService);
   // dotenv (under ConfigModule.forRoot) doesn't override a variable
   // already set in the shell environment, so `PORT=3001 npm run

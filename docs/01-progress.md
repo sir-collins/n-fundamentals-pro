@@ -260,7 +260,45 @@ closed rather than just asserted to be.
       application context (DB pool included) on every change — the win is
       "no OS-level process fork + fast incremental compile," not "runtime
       state survives edits."
-- [ ] Swagger/OpenAPI docs, including documenting auth flows
+- [x] Swagger/OpenAPI docs, including documenting auth flows — pinned
+      `@nestjs/swagger@^11.4.7` (its `latest`, `12.x`, requires
+      `@nestjs/core@^12.0.0`; this project runs `^11.0.1` — same trap
+      category as the `@nestjs/config` ESM-only major from step 1).
+      `main.ts` mounts the UI at `/api` via `DocumentBuilder` +
+      `SwaggerModule.setup`, registering **two independent, named security
+      schemes** — `bearer` (JWT, matched by `@ApiBearerAuth()`) and
+      `api-key` (the `x-api-key` header, matched by
+      `@ApiSecurity('api-key')`) — so Swagger UI's "Authorize" modal shows
+      a separate input per mechanism, and either can be tested
+      independently. Every controller (`auth`, `songs`) got
+      `@ApiTags`/`@ApiOperation`/`@ApiResponse` reusing the existing JSDoc
+      prose; every DTO got `@ApiProperty`; `Song`/`Artist` entities got
+      `@ApiProperty` so they work as real `@ApiResponse({ type: ... })`
+      response types (`Artist.songs` deliberately left undocumented to
+      avoid a circular schema back through `Song.artists`). Two real gaps
+      in what Nest can infer, both worked around explicitly: `login()` has
+      no `@Body() dto` (Passport's `LocalStrategy` reads the request
+      directly) — added a doc-only `LoginDto` used solely for
+      `@ApiBody({ type: LoginDto })`; `findAll`'s return type is
+      `Paginated<Song>`, a plain interface Swagger can't introspect via
+      `type:` — documented via a raw `schema:` with `getSchemaPath(Song)`,
+      requiring `@ApiExtraModels(Song)` on the controller for the `$ref`
+      to resolve. Auth's several ad-hoc trimmed response shapes (`Pick<User,
+      ...>` etc.) were documented via literal `schema: { example: {...} }`
+      rather than minting a dozen new response-only DTOs — a deliberate,
+      proportionate choice for a first pass, not an oversight. Verified:
+      fetched the generated `/api-json` spec directly and confirmed both
+      security schemes are registered and land on exactly the right
+      routes (`bearer` on every JWT-guarded route, `api-key` only on
+      `whoami`, no security on public reads/signup/login/2fa-authenticate);
+      confirmed `Song`'s schema resolves its nested `Artist` `$ref` and
+      `GET /songs`'s paginated response shows the real `{ data: Song[],
+      total }` shape, not a generic object; ran the actual auth flow live
+      end-to-end (signup → login → bearer-protected `/auth/profile` →
+      mint an API key → `whoami` via that key instead) and confirmed a
+      non-admin still gets a real `403` on `POST /songs` — all exactly
+      matching what the generated docs describe. `npx eslint .` and
+      `npx jest` both clean.
 
 ## Project 5: Add MongoDB Alongside SQL — Not started
 

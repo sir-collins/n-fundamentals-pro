@@ -875,3 +875,156 @@ asserted the original Nest-scaffold default, `'Hello World!'` — the test
 was just never updated when the greeting changed. Updated the assertion
 to match the real, intended behavior. `npx jest` now passes all 3 suites
 clean for the first time this project has had zero failing tests.
+
+## 2026-09-10 — Debugging a NestJS app (backfilled)
+
+Every verification up to this point had been black-box: curl/`rest-client.http`
+plus a `psql` read, never an actual paused breakpoint. This step is pure
+tooling — `.vscode/launch.json` with a single **attach** config (`type:
+node`, `request: attach`, port `9229`, `restart: true`), wired to the
+scaffold's existing `start:debug` script (`nest start --debug --watch`,
+already present, just never used). Attach over launch was a deliberate
+choice: it keeps the existing terminal-based workflow (run `npm run
+start:debug` yourself, watch its own logs) instead of moving output into
+VS Code's debug console.
+
+`restart: true` matters specifically because `start:debug` also passes
+`--watch` — without it, a file-save-triggered restart would silently
+leave the debugger detached until manually reattached. Verified for
+real, not just "the config looks right": set a breakpoint inside
+`RolesGuard.canActivate`, fired a real `PUT /songs/:id` with a
+`user`-role (non-admin) token from `rest-client.http`, and confirmed
+execution actually paused — inspected `request.user` and the resolved
+required-roles metadata live in VS Code's Variables pane before
+resuming to the expected `403`. Also confirmed a `--watch`-triggered
+restart mid-session reattached automatically with no manual step, and
+that `start:dev`/`start:prod` remained completely unaffected — this
+step touches no application code, only editor tooling.
+
+## 2026-09-10 — Hot Module Reloading (backfilled)
+
+The goal: swap the dev loop's full OS-level process restart (what
+`start:dev`'s `nest start --watch` already does on every save) for
+webpack's actual Hot Module Replacement — recompile only the changed
+modules and update the *same* running process, no process fork. Added
+`webpack-hmr.config.js` (Nest's standard HMR recipe:
+`webpack-node-externals` keeps `node_modules` external,
+`HotModuleReplacementPlugin` + `RunScriptWebpackPlugin` drive the
+update) and a `module.hot.accept()`/`dispose()` block in `main.ts`,
+behind a **new** `start:hmr` script — deliberately not replacing
+`start:dev`, so the existing tsc-based loop and `start:prod`/`nest
+build` stay untouched while the two approaches could be compared.
+
+Hit a real bug the textbook recipe doesn't warn about: the "obvious"
+script, `nest start --webpack --webpackPath webpack-hmr.config.js
+--watch`, crashed with `EADDRINUSE` on *every* boot. Rather than guess,
+read `@nestjs/cli`'s own source
+(`actions/start.action.js`/`compiler/webpack-compiler.js`) directly and
+found the actual cause: `StartAction` unconditionally spawns
+`dist/main.js` itself on every successful compile
+(`createOnSuccessHook`/`spawnChildProcess`), with zero awareness that
+the webpack config might already have its own `RunScriptWebpackPlugin`
+doing the same thing — so `nest start` always runs the bundle *twice*,
+and the second process loses the port race. `BuildAction` never wires
+up that spawner at all, so switching to `nest build --webpack
+--webpackPath webpack-hmr.config.js --watch` leaves
+`RunScriptWebpackPlugin` as the sole runner. Confirmed concretely, not
+just by reasoning about the source: two distinct PIDs racing port 3000
+under `nest start`; exactly one PID, no crash, under `nest build`.
+
+Verified end-to-end what "hot" actually buys here, and what it doesn't:
+a real code change (edited `AppService.getHello`'s return string)
+triggered a ~380ms incremental rebuild (vs. the ~3.5s cold build) and
+`curl localhost:3000/` served the new string immediately — all inside
+the *same* OS process, confirmed via `ps` showing an unchanged PID
+throughout. But `module.hot.dispose(() => app.close())` still tears
+down and fully rebuilds the whole Nest application context (TypeORM
+pool included) on every change — so the actual win is "no process fork
++ fast incremental compile," not "runtime state survives edits," and
+it's worth being precise about that rather than overselling it.
+
+Also fixed two real ESLint errors the "official" HMR recipe's own code
+doesn't satisfy in a project with `typescript-eslint`'s
+`recommendedTypeChecked` config: `declare const module: any` trips
+`no-unsafe-member-access`/`no-unsafe-call` on every `module.hot.*`
+access (fixed by typing `module` narrowly instead of `any`), and
+`dispose(() => app.close())` trips `no-misused-promises` (a `Promise`
+returned where `void` was expected — fixed with `() => void
+app.close()`). Separately, `webpack-hmr.config.js` itself — a root-level
+CommonJS config file, not part of the `tsconfig`-covered app code —
+needed the exact same treatment already given to `eslint.config.mjs`:
+added to that file's own `ignores` array, since ESLint's type-aware
+parser can't type-check a file the TS project doesn't include.
+
+This completes the fourth Project 4 item. Remaining: Swagger/OpenAPI docs.
+
+## 2026-09-11 — Swagger/OpenAPI docs, including documenting auth flows
+
+The last Project 4 item, and the one the roadmap singles out a sub-goal
+for by name: "documenting auth flows." This app has genuinely two
+independent auth mechanisms (JWT bearer, `x-api-key`) plus a two-step
+2FA login (`login` → `tempToken` → `2fa/authenticate` → real token) —
+exactly the kind of thing OpenAPI's multiple named security schemes
+exist for. `main.ts` registers both via `DocumentBuilder`:
+`.addBearerAuth()` (default scheme name `'bearer'`, matched by
+`@ApiBearerAuth()` used with no arguments) and `.addApiKey({ type:
+'apiKey', name: 'x-api-key', in: 'header' }, 'api-key')` (matched by
+`@ApiSecurity('api-key')`), so Swagger UI's "Authorize" modal shows a
+separate input per mechanism and either can be tested on its own.
+
+Found the same category of version trap as `@nestjs/config`'s
+ESM-only major back in step 1, before it could bite: `@nestjs/swagger`'s
+`latest` (`12.0.1`) requires `@nestjs/core@^12.0.0`, but this project
+runs `^11.0.1` — confirmed via `npm view @nestjs/swagger@11
+peerDependencies` that the last `11.x` release requires exactly
+`@nestjs/core: ^11.0.1`, and pinned `@nestjs/swagger@^11.4.7` instead of
+trusting a bare `npm install`.
+
+Two real gaps in what Nest/Swagger can infer automatically, both
+resolved deliberately rather than left generic: `login()` has no
+`@Body() dto` param at all — Passport's `LocalStrategy` reads
+`email`/`password` off the request directly — so there was nothing for
+Swagger to infer a request body from. Added a small doc-only `LoginDto`
+(never used for actual validation, which still happens in
+`LocalStrategy`) purely for `@ApiBody({ type: LoginDto })`, matching
+every other route's pattern rather than reaching for an inline
+`@ApiBody({ schema: {...} })`. Separately, `findAll`'s return type is
+`Paginated<Song>` — a plain interface in `songs.service.ts`, not a
+class — which Swagger's `type:` option can't introspect. Documented it
+with a raw `schema:` referencing `getSchemaPath(Song)`, which required
+adding `@ApiExtraModels(Song)` at the controller level so the `$ref`
+actually resolves instead of pointing at nothing.
+
+Scoped the response-documentation effort deliberately rather than
+maximally: `Song`/`Artist` entities got `@ApiProperty` on their fields
+so `@ApiResponse({ type: Song })` shows a real shape (and
+`Artist.songs`, the relation's inverse side, was deliberately left
+undocumented — `Song` already carries `artists`, and documenting both
+directions would create a circular schema reference for no benefit).
+But auth's several routes return ad-hoc trimmed shapes (`Pick<User,
+'id'|'email'>`, etc.) rather than a full entity — minting a
+response-only DTO class for each would have added roughly a dozen new
+files for a first documentation pass. Used `@ApiResponse({ status,
+description, schema: { example: {...} } })` with a literal example
+object instead — a proportionate choice for now, not an oversight, and
+one that can be upgraded to real response DTOs later if the docs need
+to get stricter.
+
+Verified by reading the actual generated spec, not just trusting the
+decorators compiled: fetched `/api-json` directly and confirmed both
+security schemes land on exactly the intended routes (`bearer` on every
+JWT-guarded route, `api-key` only on `whoami`, no security requirement
+on the genuinely public routes — reads, signup, login, and
+`2fa/authenticate` itself, which can't require a token since the caller
+doesn't have one yet); confirmed `Song`'s schema resolves its nested
+`Artist` `$ref` and that `GET /songs` shows the real `{ data: Song[],
+total }` shape instead of a generic object. Then ran the real flow
+end-to-end against the running app — signup, login, `GET /auth/profile`
+with the bearer token, minted an API key, `whoami` with that key
+instead, and confirmed a non-admin token still gets a real `403` on
+`POST /songs` — all exactly matching what the generated docs describe,
+not merely what they claim. `npx eslint .` clean, `npx jest` all 3
+suites passing.
+
+This completes Project 4. Next: Project 5, adding MongoDB alongside the
+existing Postgres/TypeORM data layer.

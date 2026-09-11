@@ -16,6 +16,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { SongsService, Paginated } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
@@ -43,11 +51,20 @@ import { UserRole } from '../users/entities/user.entity';
  * (populating `req.user`), then `RolesGuard` checks the role; order in
  * `@UseGuards(...)` matters for that reason.
  */
+@ApiTags('songs')
+// Paginated<Song> (songs.service.ts) is a plain interface, not a class —
+// registering Song here lets findAll's raw `schema:` below $ref it.
+@ApiExtraModels(Song)
 @Controller('songs')
 export class SongsController {
   constructor(private readonly songsService: SongsService) {}
 
   /** Create a song. Requires an authenticated `admin`. */
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a song. Requires an authenticated admin.' })
+  @ApiResponse({ status: 201, description: 'Song created.', type: Song })
+  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
+  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post()
@@ -61,6 +78,19 @@ export class SongsController {
   }
 
   /** List songs, one page at a time (`?page=&limit=`, both optional). */
+  @ApiOperation({
+    summary: 'List songs, one page at a time (?page=&limit=, both optional).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'A page of songs.',
+    schema: {
+      properties: {
+        data: { type: 'array', items: { $ref: getSchemaPath(Song) } },
+        total: { type: 'number' },
+      },
+    },
+  })
   @Get()
   @HttpCode(HttpStatus.OK)
   async findAll(
@@ -77,6 +107,9 @@ export class SongsController {
    * Fetch a single song by id.
    * @throws NotFoundException if no song exists with `id`.
    */
+  @ApiOperation({ summary: 'Fetch a single song by id.' })
+  @ApiResponse({ status: 200, description: 'The song.', type: Song })
+  @ApiResponse({ status: 404, description: 'No song exists with this id.' })
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<Song> {
@@ -103,6 +136,16 @@ export class SongsController {
    * @throws BadRequestException if the update payload is empty.
    * @throws NotFoundException if no song exists with `id`.
    */
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Update a song by id. Only the supplied fields are changed. Requires an authenticated admin.',
+  })
+  @ApiResponse({ status: 200, description: 'The updated song.', type: Song })
+  @ApiResponse({ status: 400, description: 'Empty update payload.' })
+  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
+  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
+  @ApiResponse({ status: 404, description: 'No song exists with this id.' })
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Put(':id')
@@ -141,6 +184,14 @@ export class SongsController {
    * Delete a song by id. Requires an authenticated `admin`.
    * @throws NotFoundException if no song exists with `id`.
    */
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Delete a song by id. Requires an authenticated admin.',
+  })
+  @ApiResponse({ status: 204, description: 'Song deleted.' })
+  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
+  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
+  @ApiResponse({ status: 404, description: 'No song exists with this id.' })
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Delete(':id')
