@@ -1028,3 +1028,65 @@ suites passing.
 
 This completes Project 4. Next: Project 5, adding MongoDB alongside the
 existing Postgres/TypeORM data layer.
+
+## 2026-09-11 — Comments on songs (Project 5, MongoDB alongside Postgres)
+
+The roadmap's own suggestion for this step was "activity logs or
+comments." Picked comments deliberately, not by default: an activity log
+doesn't naturally need a second document to reference, while threaded
+replies on a comment do — and "populate references" is a named roadmap
+goal, not an optional extra. So the design is comments *with* threaded
+replies specifically so there'd be a real Mongoose `ref`/`.populate()` to
+exercise, not just CRUD against a single flat collection.
+
+That shaped a distinction worth being precise about: a `Comment`'s
+`songId` (the Postgres song it belongs to) is a **plain stored number**,
+not a Mongoose ref — there's no such thing as a cross-database
+`populate()`, so a `songId`'s existence is checked explicitly in
+`CommentsService`/`CommentsController` via the (now-exported)
+`SongsService`, the same way any other business rule gets checked. The
+`parentComment` field, by contrast, points to another document in the
+*same* Mongo collection, so it's a genuine `ref: 'Comment'` that
+`.populate()` actually resolves. Two fields that look similar
+(both "a reference to something else") but work completely differently
+under the hood, and the code says so rather than treating them the same.
+
+Followed the same version-compatibility habit established since
+`@nestjs/config`'s ESM-only trap: checked `@nestjs/mongoose`'s
+peerDependencies against the installed `@nestjs/core@^11.0.1` *before*
+installing, this time via `npm view`. No trap this time —
+`@nestjs/mongoose@^12.0.0` explicitly accepts `^11.0.0 || ^12.0.0`, so it
+installed clean alongside `mongoose@^8`.
+
+Kept `CommentsService`/`CommentsController`'s division of responsibility
+identical to `SongsService`/`SongsController` rather than inventing a
+second style for the new database: the service has no try/catch at all
+(plain async methods, `null` for "not found"), and the controller owns
+every `HttpException`. The one genuinely new piece of authorization
+logic is in `DELETE comments/:id` — checking `comment.authorId ===
+req.user.id || req.user.role === UserRole.ADMIN` directly in the
+controller, since this is a resource-*ownership* check, not a role
+check; `RolesGuard` already exists but solves a different problem (does
+this role have blanket permission for this route at all), not this one
+(does this specific caller own this specific resource). Comments
+themselves are also postable by any authenticated user, not just admins
+— a deliberate contrast with songs' admin-only mutations, since a
+comment is user-generated content, not curated catalog data.
+
+Verified for real against the running app, not just that it compiled:
+posted a top-level comment as one user, a reply as a *different* user
+(the seeded admin) with `parentCommentId` set, then fetched the song's
+comments and confirmed the reply's `parentComment` came back as a fully
+resolved object — the parent's actual `body` and `authorEmail`, not a
+raw ObjectId string — proving `.populate()` genuinely works end to end.
+Also confirmed the negative paths: `POST`/`GET` against a nonexistent
+song both `404`; a non-author deleting someone else's comment got a real
+`403`; the actual author's own delete succeeded, confirmed gone from a
+follow-up `GET`; an admin could delete another user's comment (the
+ownership override). Noticed and deliberately left as a known gap,
+rather than silently working around it: deleting a parent comment leaves
+a reply's `parentComment` populate resolving to `null` afterward — no
+cascade delete implemented, the same category of accepted gap as
+Project 2's orphaned `Artist` rows. `npx eslint .` clean, `npx jest` all
+3 suites passing (untouched by this step — no existing behavior
+changed, only additive).

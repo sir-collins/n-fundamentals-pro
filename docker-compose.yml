@@ -11,5 +11,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # No auth on the container itself — matches the same local-dev-only
+  # pragmatism as postgres's own simple, non-production credentials above.
+  mongo:
+    image: mongo:7
+    container_name: n-fundamentals-mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+
 volumes:
   postgres_data:
+  mongo_data:

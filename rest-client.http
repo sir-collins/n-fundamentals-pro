@@ -313,3 +313,52 @@ x-api-key: {{rawApiKey}}
 # way — a revoke attempt can't be used to probe which ids exist)
 DELETE {{baseUrl}}/auth/api-keys/999999
 Authorization: Bearer {{apiKeyToken}}
+
+### Comments live in MongoDB, not Postgres — everything below assumes a
+# real song id exists (paste one from "Create new song" above) and a
+# fresh @token/@adminToken from "Log in" sections above.
+@songId = PASTE_SONG_ID_HERE
+
+### Post a top-level comment (any authenticated user, not just admin)
+POST {{baseUrl}}/songs/{{songId}}/comments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "body": "Great song!"
+}
+
+### Reply to that comment as a different user (paste the _id from the
+# response above) — real Mongoose ref, not the plain songId FK below
+@parentCommentId = PASTE_COMMENT_ID_HERE
+POST {{baseUrl}}/songs/{{songId}}/comments
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "body": "Agreed!",
+  "parentCommentId": "{{parentCommentId}}"
+}
+
+### List a song's comments — public, no token needed. The reply's
+# parentComment field comes back as a fully populated object (the
+# parent's real body/authorEmail), not a raw ObjectId string.
+GET {{baseUrl}}/songs/{{songId}}/comments
+
+### Comment on a song that doesn't exist (should 404)
+POST {{baseUrl}}/songs/999999/comments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "body": "test"
+}
+
+### Delete someone else's comment (should 403 — author or admin only)
+DELETE {{baseUrl}}/comments/PASTE_ANOTHER_USERS_COMMENT_ID_HERE
+Authorization: Bearer {{token}}
+
+### Delete your own comment (should succeed — confirm it's gone from a
+# follow-up "List a song's comments" above)
+DELETE {{baseUrl}}/comments/PASTE_YOUR_OWN_COMMENT_ID_HERE
+Authorization: Bearer {{token}}
