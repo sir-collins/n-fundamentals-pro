@@ -16,6 +16,9 @@ each piece was built the way it was — start at
 - **NestJS** (Controllers/Services/Modules, Pipes, Guards, Exception
   Filters, Middleware)
 - **PostgreSQL** via **TypeORM**, run locally through `docker-compose.yml`
+- **MongoDB** via **Mongoose** (`@nestjs/mongoose`), also run through
+  `docker-compose.yml` — polyglot persistence: comments on songs (with
+  threaded replies) live here instead of Postgres
 - **Passport** (`local` + `jwt` strategies) for login and route protection
 - **bcrypt** for password hashing, **otplib** + **qrcode** for TOTP-based
   two-factor auth
@@ -24,7 +27,7 @@ each piece was built the way it was — start at
 ## Getting started
 
 ```bash
-# start Postgres
+# start Postgres + MongoDB
 docker compose up -d
 
 # install deps
@@ -34,10 +37,13 @@ npm install
 npm run start:dev
 ```
 
-The app expects Postgres reachable with the credentials in
-`docker-compose.yml` (hardcoded for local dev — see `app.module.ts` and
-`docs/03-journal.md` for why, and what changes once Project 4's
-environment-config step lands).
+The app expects both databases reachable using the values in `.env`
+(copy `.env.example` to `.env` and adjust if needed — every value is
+validated at boot by `src/config/env.validation.ts`; a missing or
+malformed one makes the app refuse to start with a clear error instead
+of failing confusingly later). `docker-compose.yml`'s own credentials
+match `.env.example`'s defaults, so the two stay in sync for local dev
+with no extra setup.
 
 A couple of alternate run modes exist alongside plain `start:dev`:
 - `npm run start:debug` — opens Node's inspector (port `9229`) for real
@@ -86,9 +92,9 @@ with the API as new endpoints are added.
 
 ## Project status
 
-**Project 4: Production-Grade Setup** is complete — env config/validation,
-migrations + seeding, debugging tooling, Hot Module Reloading, and
-Swagger/OpenAPI docs. Next up: **Project 5**, adding MongoDB alongside the
-existing Postgres/TypeORM data layer. See
+**Project 4: Production-Grade Setup** is complete. Currently on
+**Project 5: Add MongoDB Alongside SQL** — comments on songs (with
+threaded replies) now live in MongoDB via Mongoose, polyglot alongside
+the existing Postgres/TypeORM data. See
 [`docs/01-progress.md`](./docs/01-progress.md) for the live checklist
 across every project in the roadmap.

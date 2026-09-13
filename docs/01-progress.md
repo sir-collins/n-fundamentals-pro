@@ -300,7 +300,57 @@ closed rather than just asserted to be.
       matching what the generated docs describe. `npx eslint .` and
       `npx jest` both clean.
 
-## Project 5: Add MongoDB Alongside SQL — Not started
+## Project 5: Add MongoDB Alongside SQL — 🚧 In progress
+
+- [x] Run MongoDB via Docker Compose — new `mongo` service in
+      `docker-compose.yml` (official `mongo:7` image, own named volume),
+      alongside the existing `postgres` service. No auth on the container
+      itself — same local-dev-only pragmatism as postgres's own simple
+      credentials.
+- [x] Connect NestJS to MongoDB, define a Schema — `@nestjs/mongoose@^12.0.0`
+      + `mongoose@^8` (checked peer compatibility against
+      `@nestjs/core@^11.0.1` first, same version-check habit as every
+      dependency added since Project 4 step 5 — no trap this time).
+      `MongooseModule.forRootAsync(...)` added to `app.module.ts` beside
+      the existing `TypeOrmModule.forRootAsync`, reading a new validated
+      `MONGO_URI` env var. New `Comment` schema
+      (`src/comments/schemas/comment.schema.ts`) via `@Schema()`/`@Prop()`
+      decorator classes, mirroring how `@Entity()`/`@Column()` already
+      work for Postgres.
+- [x] Save, find, delete records; Populate references — **comments on
+      songs, with threaded replies**, chosen deliberately over an
+      activity-log alternative because it's the design that actually
+      exercises a real Mongoose `ref`/`.populate()` (a self-referential
+      `parentComment` field), not a faked cross-database join. New
+      `CommentsModule`/`CommentsService`/`CommentsController`
+      (`src/comments/`), mirroring `SongsModule`'s trio shape and
+      `SongsService`/`SongsController`'s division of responsibility (no
+      try/catch in the service; the controller owns all HTTP-status
+      handling). Routes: `POST songs/:songId/comments` (any authenticated
+      user — a deliberate difference from songs' admin-only mutations,
+      since comments are user-generated content, not curated catalog
+      data), `GET songs/:songId/comments` (public), `DELETE
+      comments/:id` (author or admin only — a resource-*ownership*
+      check, new logic, since `RolesGuard` only handles role checks, not
+      ownership). `songId` is stored as a plain Postgres integer, not a
+      Mongoose ref — there's no cross-database `populate()`, so its
+      existence is validated at the service layer instead (via
+      `SongsModule` now exporting `SongsService`). Verified end-to-end
+      against the running app: posted a top-level comment as a non-admin
+      user (`201`, real Mongo `_id`); posted a reply as a different user
+      (admin) with `parentCommentId` set (`201`); `GET
+      songs/:id/comments` came back with the reply's `parentComment`
+      field as a **fully populated object** (the parent's real `body`/
+      `authorEmail`), not a raw ObjectId string — confirming `.populate()`
+      genuinely works; `POST`/`GET` against a nonexistent song both
+      `404`; a non-author got a real `403` deleting someone else's
+      comment, while the actual author's own delete succeeded and the
+      comment was confirmed gone from a follow-up `GET`; an admin
+      successfully deleted another user's comment (the ownership
+      override). Known, accepted gap (same treatment as Project 2's
+      orphaned `Artist` rows): deleting a parent comment leaves any
+      reply's `parentComment` populate resolving to `null` — no cascade
+      delete implemented. `npx eslint .` and `npx jest` both clean.
 
 ## Project 6: Ship It — Not started
 
