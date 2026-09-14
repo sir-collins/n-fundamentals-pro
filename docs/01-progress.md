@@ -352,7 +352,41 @@ closed rather than just asserted to be.
       reply's `parentComment` populate resolving to `null` — no cascade
       delete implemented. `npx eslint .` and `npx jest` both clean.
 
-## Project 6: Ship It — Not started
+## Project 6: Ship It — 🚧 In progress
+
+- [ ] Separate dev/prod environments
+- [ ] Push to GitHub, deploy to Railway
+- [ ] Fix env-related deployment bugs
+- [ ] Testing with Jest: auto-mocking, spies, unit tests for
+      controllers & services, E2E tests — **first sub-step done**: the
+      E2E suite was actually broken (crashing before any test could
+      run), fixed. Two separate real bugs, found by running
+      `npm run test:e2e` rather than assuming it worked:
+      1. `@nestjs/mongoose@^12.0.0` (added in Project 5) is pure ESM
+         (its own `package.json` has `"type": "module"`) — Jest's
+         default `transformIgnorePatterns` skips transforming anything
+         under `node_modules`, so this one package reached Node's CJS
+         `require()` untransformed and crashed with `SyntaxError:
+         Unexpected token 'export'` before the app could even boot.
+         Confirmed `mongoose` itself (the driver) is plain CommonJS —
+         only the Nest wrapper package needed special handling.
+         `test/jest-e2e.json` now widens `transformIgnorePatterns` to
+         `node_modules/(?!(@nestjs/mongoose)/)` so `ts-jest` actually
+         transforms it. Verified this was the real fix, not a
+         coincidence: applying only this change turned the failure from
+         a hard crash (0 tests ran) into the *next*, already-known
+         issue below actually running and failing for its own reason —
+         proof the ESM crash itself was gone.
+      2. `test/app.e2e-spec.ts` still asserted the Nest-scaffold
+         default, `'Hello World!'` — `AppService.getHello()` has
+         returned `'Hello I am learning nestjs!'` since early in this
+         project, already fixed once in the *unit* test
+         (`app.controller.spec.ts`, 2026-09-07) but apparently never
+         carried over to the e2e spec. Fixed to match.
+      `npm run test:e2e` passes now; `npm test` and `npx eslint src/
+      test/` both still clean. Remaining testing work (auto-mocking
+      with real behavior tests, broader E2E coverage) is later
+      sub-steps, not part of this one.
 
 ## Project 7 (Branch A): Real-Time Layer — Not started
 

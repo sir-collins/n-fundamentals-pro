@@ -1090,3 +1090,74 @@ cascade delete implemented, the same category of accepted gap as
 Project 2's orphaned `Artist` rows. `npx eslint .` clean, `npx jest` all
 3 suites passing (untouched by this step — no existing behavior
 changed, only additive).
+
+## 2026-09-14 — Fixing the broken E2E suite (Project 6, step 1)
+
+Deliberately started Project 6 here rather than with unit tests: running
+`npm run test:e2e` (rather than assuming it worked, since nothing had
+touched it since Project 1) turned up a hard crash —
+`SyntaxError: Unexpected token 'export'` inside
+`@nestjs/mongoose/dist/index.js`, before a single test could even run.
+
+Root cause, confirmed by inspection rather than guessed:
+`@nestjs/mongoose@^12.0.0` (added in the Project 5 step) is genuinely
+**pure ESM** — its own `package.json` has `"type": "module"`, and its
+entry point is literally `export * from './common/index.js'`. Jest's
+e2e config (`test/jest-e2e.json`) transforms `.ts`/`.js` through
+`ts-jest`, but Jest's *default* `transformIgnorePatterns` skips
+transforming anything under `node_modules` — so this one ESM-only
+package reached Node's CommonJS `require()` completely untransformed.
+Checked `mongoose` itself (the actual driver, as opposed to the Nest
+wrapper) before assuming the whole dependency tree needed the same
+treatment — it's plain CommonJS (`"type": "commonjs"`), so only
+`@nestjs/mongoose` needed special handling. This never surfaced in
+`npm test` (plain unit tests) because those specs mock every dependency
+directly and never import `AppModule`/`MongooseModule` at all — only
+`test:e2e` boots the real app.
+
+Fix: widened `transformIgnorePatterns` to
+`node_modules/(?!(@nestjs/mongoose)/)` so `ts-jest` actually processes
+that one package instead of skipping it. Verified this was genuinely
+the fix, not a coincidence, by watching the failure mode *change*: with
+only this change applied, the suite went from a hard crash (0 tests run
+at all) to the app booting successfully and a single, different,
+already-known assertion failure — proof the ESM crash specifically was
+gone, not just that something else shifted around it.
+
+That second failure was real too, and had been sitting there
+undetected: `test/app.e2e-spec.ts` still asserted the Nest-scaffold
+default, `'Hello World!'`, even though `AppService.getHello()` has
+returned `'Hello I am learning nestjs!'` since early in this project —
+and even though the exact same staleness was already found and fixed
+once before, in the *unit* test (`app.controller.spec.ts`, see the
+2026-09-07 entry above). It just never got carried over to the e2e
+spec, because nothing had actually run that spec since. Fixed to match.
+
+One more thing surfaced, and the first theory about it was wrong —
+worth recording honestly rather than quietly correcting it. The IDE
+flagged `describe`/`it`/`beforeEach` as unresolvable in
+`test/app.e2e-spec.ts`. `npx tsc --noEmit -p tsconfig.json` (the
+identical project config, whole repo including `test/`) came back
+clean, which looked like proof it was just a stale VS Code TS-server
+cache — restart and move on. Restarting the TS server didn't clear it,
+which meant that theory was simply wrong, not "needs more patience."
+The actual difference: every other spec file in this repo
+(`songs.service.spec.ts`, `songs.controller.spec.ts`) explicitly
+imports Jest's globals from `@jest/globals` instead of relying on
+ambient `@types/jest` globals — `app.e2e-spec.ts` was the one file that
+didn't. VS Code's language server evidently resolves ambient globals
+for `test/` differently than a plain CLI `tsc -p tsconfig.json` run
+does (never fully root-caused *why* — not worth the time once the fix
+itself was obvious and consistent with this repo's own convention).
+Added the same explicit `@jest/globals` import here, confirmed the
+diagnostic actually cleared (not just "should be fine now"), and
+confirmed `test:e2e` still passes.
+
+`npm run test:e2e` passes now; `npm test` and `npx eslint src/ test/`
+both still clean. Remaining Project 6 testing work — real auto-mocked
+unit tests with actual behavior assertions (current specs are pure
+Nest-CLI scaffold: `{}` stand-ins for every dependency, only
+`toBeDefined()` checks, nothing ever actually called), and broader E2E
+coverage beyond the one `GET /` check — is scoped as later, separate
+sub-steps, along with dev/prod environment separation and the actual
+Railway deploy.
