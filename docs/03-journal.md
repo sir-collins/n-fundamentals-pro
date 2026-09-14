@@ -1161,3 +1161,64 @@ Nest-CLI scaffold: `{}` stand-ins for every dependency, only
 coverage beyond the one `GET /` check — is scoped as later, separate
 sub-steps, along with dev/prod environment separation and the actual
 Railway deploy.
+
+## 2026-09-15 — Real unit tests for Songs, with auto-mocking and spies
+
+Second Project 6 testing sub-step, deliberately scoped to just
+`SongsService`/`SongsController` as the flagship pattern rather than
+attempting the whole app at once — auth alone has roughly six services,
+and doing all of them in one pass would be a much bigger, harder-to-
+review change than the pattern itself deserves.
+
+"Auto-mocking" is `@golevelup/nestjs-testing`'s `createMock<T>()` —
+every method on a mocked dependency becomes a real `jest.fn()`
+automatically, instead of hand-writing `{ findOne: jest.fn(), save:
+jest.fn(), ... }` for every provider by hand. Checked its
+`peerDependencies` before installing, same habit as every dependency
+since the `@nestjs/config` ESM-major trap — this one declares **zero**
+runtime dependencies and **zero** peer dependencies at all, so there
+was genuinely nothing to check for compatibility; it's a pure,
+Nest-version-agnostic utility.
+
+"Spies" got a real use, not a contrived one: `SongsService.update()`
+already calls `this.findOne(id)` internally before deciding whether to
+save. `jest.spyOn(service, 'findOne')` lets a test control that
+internal call's return value directly (hit the not-found branch, or
+hand back a specific existing song) without re-mocking the whole
+`Repository<Song>` just to get there indirectly.
+
+Sanity-checked the tests themselves before trusting them: temporarily
+changed one assertion to expect the wrong value (a title that was never
+actually saved), confirmed the test suite actually failed, then
+reverted. Cheap enough to do every time a nontrivial assertion goes in,
+and it's the only way to know a test can actually catch a regression
+rather than just always passing regardless of what the code does.
+
+Found and fixed a real, project-wide lint gap while writing these —
+not a false alarm dismissed, but a genuine rule collision. `expect(mock
+.method).toHaveBeenCalledWith(...)` is the standard Jest mock-assertion
+shape, but `@typescript-eslint/unbound-method` (part of this project's
+`recommendedTypeChecked` config) can't distinguish a jest mock function
+from a real method that depends on `this` when detached from its
+object — a well-known, widely-reported false positive for this exact
+rule against Jest specifically. The "correct" fix is
+`eslint-plugin-jest`'s own `unbound-method` replacement, which is
+jest-aware; decided against pulling in a new lint dependency for one
+rule and instead added a `**/*.spec.ts`-scoped override in
+`eslint.config.mjs` disabling just that rule there — deliberately
+scoped to spec files only, not a project-wide `'off'`, so a genuine
+unbound-`this` bug in real `src/` production code still gets caught.
+
+Deliberately left two things out of this step, named rather than
+silently skipped: `RolesGuard` still has zero test coverage (guards
+only run through Nest's real request pipeline, not a plain DI-
+instantiated controller, so testing one properly is its own separate
+concern — a good next candidate, not attempted here), and
+`app.controller.spec.ts` wasn't touched (already a correct, if
+minimal, smoke test — not scaffold-and-forgotten the way the Songs
+specs were).
+
+`npm test` now runs 22 tests across 3 suites (was 3 tests, one per
+suite, all just `toBeDefined()`). `npx eslint src/` and `npm run
+test:e2e` both still clean — this step touched no application
+behavior, only test code and lint config.
