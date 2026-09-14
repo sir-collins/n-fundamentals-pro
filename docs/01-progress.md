@@ -425,6 +425,30 @@ closed rather than just asserted to be.
       test` now runs 22 tests across 3 suites (was 3); `npx eslint
       src/` and `npm run test:e2e` both still clean.
 
+      **Third sub-step done**: `RolesGuard` (`src/auth/guards/roles.guard.ts`)
+      now has real test coverage — new `roles.guard.spec.ts`, `0 → 6`
+      tests. A guard needed a different test shape than a
+      controller/service: `canActivate(context: ExecutionContext)` has
+      no real `ExecutionContext` outside an actual HTTP request, so
+      there's no `TestingModule` + direct-call pattern to reuse from
+      the Songs step. Used a small hand-built fake exposing only the 3
+      methods the guard actually touches (`getHandler`, `getClass`,
+      `switchToHttp().getRequest()`), cast through `unknown` — chosen
+      over `createMock<ExecutionContext>()` deliberately, since that
+      interface has many methods this guard never calls, and a
+      hand-built fake makes what's actually being simulated obvious to
+      a reader. `createMock<Reflector>()` (same utility as the Songs
+      step) controls what `@Roles(...)` metadata comes back. Covers all
+      5 real branches (no metadata, empty-array metadata, missing
+      `request.user`, wrong role, matching role) plus a collaboration
+      assertion confirming `reflector.getAllAndOverride` is actually
+      called with both the handler *and* the class — proving
+      handler-level `@Roles()` can override a class-level one, not just
+      that metadata gets read from somewhere. Same sanity check as the
+      Songs step: deliberately broke one assertion, confirmed it
+      failed, reverted. `npm test` now runs 28 tests across 4 suites;
+      `npx eslint src/` and `npm run test:e2e` both still clean.
+
 ## Project 7 (Branch A): Real-Time Layer — Not started
 
 ## Project 8 (Branch B): GraphQL API — Not started

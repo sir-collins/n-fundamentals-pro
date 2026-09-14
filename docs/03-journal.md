@@ -1222,3 +1222,54 @@ specs were).
 suite, all just `toBeDefined()`). `npx eslint src/` and `npm run
 test:e2e` both still clean — this step touched no application
 behavior, only test code and lint config.
+
+## 2026-09-15 — RolesGuard unit tests
+
+Third Project 6 testing sub-step, and the natural next one — flagged
+in each of the last two entries as the obvious remaining gap, and
+arguably higher-stakes than more CRUD tests: this is the actual
+authorization logic deciding who can mutate `songs`. A subtle bug here
+is a real security gap, not just a missed edge case.
+
+A guard needed a genuinely different test shape, not just a smaller
+version of the Songs pattern. `RolesGuard.canActivate(context:
+ExecutionContext): boolean` can't be exercised through a
+`TestingModule` + direct method call the way `SongsController` could —
+there's no real `ExecutionContext` outside an actual HTTP request
+going through Nest's pipeline. Built a small hand-written fake instead,
+exposing only the three methods the guard actually calls
+(`getHandler`, `getClass`, `switchToHttp().getRequest()`), cast through
+`unknown`. Deliberately chose that over
+`createMock<ExecutionContext>()`: the real interface has a long list of
+methods (`getArgs`, `getType`, `switchToRpc`, `switchToWs`, ...) this
+guard never touches, and auto-mocking all of them would bury the three
+that actually matter under stubs a reader has to mentally filter out.
+A hand-built fake makes exactly what's being simulated visible at a
+glance — the right tool for a *narrow* interface surface, the same way
+`createMock` was the right tool for `Repository<Song>`'s much wider
+one in the Songs step.
+
+Covered all five real branches in `canActivate`: no `@Roles(...)`
+metadata and empty-array metadata (both hit the same early `return
+true`, but tested separately since they're reached via different
+`reflector` return values — `undefined` vs. `[]` — and it costs nothing
+to confirm both actually take that path); missing `request.user` while
+roles are required (the defensive branch — normally unreachable since
+`AuthGuard('jwt')` always runs first and populates `user`, but the
+guard doesn't *assume* that, so the test doesn't either); a real
+role mismatch; and a real role match. Added one more assertion beyond
+the branch coverage: confirmed `reflector.getAllAndOverride` is called
+with `ROLES_KEY` *and* `[handler, class]` together — not just that some
+metadata gets read, but that both the specific route handler and the
+controller class are checked, which is what actually lets a
+handler-level `@Roles()` override a class-level one.
+
+Same sanity discipline as the Songs step: temporarily flipped one
+`toBe(true)` to `toBe(false)`, confirmed the suite genuinely failed,
+reverted. Consistency matters more than novelty here — this project
+now has an established, repeatable way to prove a test can catch a
+real regression, and it's cheap enough to do every time.
+
+`npm test` now runs 28 tests across 4 suites (was 22/3). `npx eslint
+src/` and `npm run test:e2e` both still clean — no application
+behavior changed, test coverage only.
