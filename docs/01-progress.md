@@ -388,6 +388,43 @@ closed rather than just asserted to be.
       with real behavior tests, broader E2E coverage) is later
       sub-steps, not part of this one.
 
+      **Second sub-step done**: `SongsService`/`SongsController`'s specs
+      (previously pure Nest-CLI scaffold — `{}` stand-ins for every
+      dependency, only `toBeDefined()` checks, nothing ever actually
+      called) rewritten as genuine behavior tests, the flagship pattern
+      for the rest of the app. `@golevelup/nestjs-testing`'s
+      `createMock<T>()` replaces hand-written mocks (checked its
+      peerDependencies first — zero runtime/peer deps declared, so no
+      Nest-version compatibility risk at all, unlike most dependencies
+      added in prior steps). `jest.spyOn(service, 'findOne')` gets a
+      genuine use in `SongsService.update()`'s tests, which already
+      calls `this.findOne(id)` internally — a real spy use case, not a
+      contrived one. 21 new tests: `create`/`findAll`/`findOne` assert
+      the exact repository call shapes; `update` covers not-found,
+      merge-without-artists, and merge-with-artists-resolved; `remove`
+      covers both `affected` outcomes; the controller spec covers every
+      handler's success path plus its specific failure-to-status
+      mapping (`null` → `404`, unexpected error → `500`,
+      `NotFoundException` never accidentally caught by the generic
+      wrap). Sanity-checked the tests themselves, not just the code:
+      deliberately broke one assertion (expected the wrong title) and
+      confirmed it actually failed, before reverting — proof these
+      tests can catch a real regression, not just pass unconditionally.
+      Found and fixed a real project-wide lint gap along the way:
+      `@typescript-eslint/unbound-method` flags the standard
+      `expect(mock.method).toHaveBeenCalledWith(...)` pattern (a
+      well-known false positive for Jest mocks specifically) — added a
+      `**/*.spec.ts`-scoped override in `eslint.config.mjs` disabling
+      just that rule for spec files, rather than installing
+      `eslint-plugin-jest` for one rule or silencing it project-wide
+      (which would risk masking a real unbound-`this` bug in actual
+      `src/` logic). Deliberately **not** in this step: guard unit
+      tests (`RolesGuard` still has zero coverage — a good, separate,
+      later candidate) and touching `app.controller.spec.ts` (already a
+      correct minimal smoke test, not scaffold-and-forgotten). `npm
+      test` now runs 22 tests across 3 suites (was 3); `npx eslint
+      src/` and `npm run test:e2e` both still clean.
+
 ## Project 7 (Branch A): Real-Time Layer — Not started
 
 ## Project 8 (Branch B): GraphQL API — Not started
