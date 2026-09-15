@@ -354,7 +354,35 @@ closed rather than just asserted to be.
 
 ## Project 6: Ship It — 🚧 In progress
 
-- [ ] Separate dev/prod environments
+- [x] Separate dev/prod environments — mostly already done by Project 4
+      step 1's config work (every value already read through
+      `ConfigService` with Joi validation, never hardcoded); this step
+      found and fixed the two actual gaps. `NODE_ENV` added to
+      `env.validation.ts`'s schema (`development`/`production`/`test`,
+      defaults `development`) — previously didn't exist anywhere in the
+      codebase. `SwaggerModule.setup(...)` in `main.ts` was running
+      unconditionally, exposing the full route list/auth shapes at
+      `/api` regardless of environment; gated behind a **dedicated
+      `ENABLE_SWAGGER`** boolean var (not tied to `NODE_ENV` — explicit
+      and independently toggleable) defaulting to `true` so the
+      existing dev workflow is unaffected. `start:prod` now actually
+      sets `NODE_ENV=production` (was just `node dist/main` — nothing
+      was setting it before). Already-confirmed-prod-safe, deliberately
+      untouched: TypeORM's `synchronize: false` (unconditional,
+      migrations-only) and `HttpExceptionFilter` (never leaks raw
+      internal error details). CORS deliberately deferred to the
+      Railway deploy step — not a dev-vs-prod distinction on its own.
+      Verified against the real running app, not just reasoning about
+      it: default boot still serves Swagger UI at `/api` (`200`);
+      `ENABLE_SWAGGER=false` makes `/api` `404` while `/songs` and
+      every other real route keep working normally; an invalid
+      `NODE_ENV` value makes the app refuse to boot with a clear Joi
+      validation error (confirmed via `curl` — connection refused,
+      nothing bound to the port); `npm run start:prod` after a real
+      `npm run build` was confirmed via `ps eww <pid>` to have
+      `NODE_ENV=production` genuinely set in the running process's own
+      environment, not just present in the script text. `npm test`,
+      `npm run test:e2e`, and `npx eslint src/ test/` all still clean.
 - [ ] Push to GitHub, deploy to Railway
 - [ ] Fix env-related deployment bugs
 - [ ] Testing with Jest: auto-mocking, spies, unit tests for

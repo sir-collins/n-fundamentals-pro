@@ -1273,3 +1273,63 @@ real regression, and it's cheap enough to do every time.
 `npm test` now runs 28 tests across 4 suites (was 22/3). `npx eslint
 src/` and `npm run test:e2e` both still clean — no application
 behavior changed, test coverage only.
+
+## 2026-09-15 — Separating dev/prod environments
+
+Fourth Project 6 item, and a smaller change than its roadmap name
+suggests — most of the actual work happened back in Project 4 step 1,
+when every config value (`DB_HOST`, `JWT_SECRET`, `MONGO_URI`, ...)
+moved behind `ConfigService` with Joi validation instead of being
+hardcoded. That's the part of "dev vs. prod" that actually matters
+most: *which values get supplied*, not different code paths. Locally
+that's `.env` (gitignored); on Railway later, the same variable names
+get set directly in its dashboard — never a committed
+`.env.production` file. This step found the two real gaps that were
+actually still open, by reading the current code rather than assuming
+the config work already covered everything.
+
+`NODE_ENV` didn't exist anywhere in this codebase at all — not read,
+not validated, nothing setting it. Added to `env.validation.ts`'s Joi
+schema exactly like every other var. `start:prod` (`node dist/main`,
+unchanged since the original scaffold) never set it either, so
+production would have been running with whatever's ambient — nothing,
+unless a host happens to set it, which isn't something to assume.
+
+The one genuine behavior gap: `SwaggerModule.setup(...)` in `main.ts`
+ran unconditionally, so `/api` exposed the full route list and every
+auth mechanism's exact shape regardless of environment — fine for
+local dev, not necessarily something to leave publicly exposed once
+deployed. Decided against tying this to `NODE_ENV` directly and gave
+it its own `ENABLE_SWAGGER` var instead — explicit and independently
+toggleable, since "is this a production environment" and "should the
+API docs be public" are related but not actually the same question (a
+staging deploy might well be `NODE_ENV=production`-shaped but still
+want docs visible, for instance). Defaults to `true` so the existing
+dev workflow needs no new env var to keep working.
+
+Explicitly did *not* touch two things that turned out to already be
+fine, rather than "fixing" something that wasn't broken: TypeORM's
+`synchronize: false` is already unconditional (migrations-only, a
+Project 4 decision, no env-based flip needed), and
+`HttpExceptionFilter` already never leaks raw internal error
+details — every unexpected failure gets a fixed, generic message
+regardless of environment. Also deliberately deferred CORS to the
+actual Railway deploy step, since it isn't really a dev-vs-prod
+distinction on its own — it matters once there's a real external
+client hitting the API from a different origin, which doesn't exist
+yet.
+
+Verified against the real running app for every claim, not just
+reasoning about the code: default boot still serves Swagger UI at
+`/api` (confirmed `200`, no regression to the existing workflow);
+flipped `ENABLE_SWAGGER=false` and confirmed `/api` actually `404`s
+while `/songs` keeps working normally (the gate doesn't touch anything
+it shouldn't); set an invalid `NODE_ENV` and confirmed the app
+genuinely refuses to boot with a clear Joi error, connection refused
+at the port — not just "should reject it"; built for real
+(`npm run build`) and ran `start:prod`, then checked the *actual
+running process's* environment via `ps eww <pid> | grep NODE_ENV`
+rather than trusting the script text alone — confirmed
+`NODE_ENV=production` was genuinely set inside the process. `npm
+test`, `npm run test:e2e`, and `npx eslint src/ test/` all still
+clean throughout.
