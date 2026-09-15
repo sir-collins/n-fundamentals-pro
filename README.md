@@ -45,6 +45,14 @@ of failing confusingly later). `docker-compose.yml`'s own credentials
 match `.env.example`'s defaults, so the two stay in sync for local dev
 with no extra setup.
 
+Two of those values are environment-shaped rather than
+connection-shaped: `NODE_ENV` (`development`/`production`/`test`,
+defaults to `development`) and `ENABLE_SWAGGER` (defaults to `true` —
+see [API Documentation](#api-documentation-swagger) below). Neither is
+committed per-environment (no `.env.production` file) — a real
+deployment sets its own values directly in its host's dashboard, the
+same as every other var here.
+
 A couple of alternate run modes exist alongside plain `start:dev`:
 - `npm run start:debug` — opens Node's inspector (port `9229`) for real
   breakpoint debugging; pairs with the `.vscode/launch.json` "Attach to

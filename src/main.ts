@@ -25,29 +25,41 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Two independent, named security schemes — this API supports both a
-  // JWT bearer token and an `x-api-key` header as separate auth
-  // mechanisms, and Swagger UI's "Authorize" modal needs a scheme name
-  // per mechanism to show a separate input for each. `addBearerAuth()`'s
-  // default scheme name ('bearer') matches `@ApiBearerAuth()` used with
-  // no arguments; the API key scheme is named 'api-key' to match
-  // `@ApiSecurity('api-key')`.
-  const swaggerDocument = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle('n-fundamentals-pro API')
-      .setDescription(
-        'A NestJS learning project: songs/artists CRUD behind a layered ' +
-          'auth system (password + JWT, roles, 2FA, API keys).',
-      )
-      .setVersion('1.0')
-      .addBearerAuth()
-      .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'api-key')
-      .build(),
-  );
-  SwaggerModule.setup('api', app, swaggerDocument);
-
   const configService = app.get(ConfigService);
+
+  // Gated behind its own dedicated var rather than tied to NODE_ENV —
+  // explicit and independently toggleable. Off by default would be the
+  // safer production default, but this defaults to on (see
+  // env.validation.ts) to keep the existing dev workflow unchanged;
+  // a real deployment sets ENABLE_SWAGGER=false directly in its own
+  // dashboard if the full route list/auth shapes shouldn't be public.
+  if (configService.get<boolean>('ENABLE_SWAGGER')) {
+    // Two independent, named security schemes — this API supports both a
+    // JWT bearer token and an `x-api-key` header as separate auth
+    // mechanisms, and Swagger UI's "Authorize" modal needs a scheme name
+    // per mechanism to show a separate input for each. `addBearerAuth()`'s
+    // default scheme name ('bearer') matches `@ApiBearerAuth()` used with
+    // no arguments; the API key scheme is named 'api-key' to match
+    // `@ApiSecurity('api-key')`.
+    const swaggerDocument = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('n-fundamentals-pro API')
+        .setDescription(
+          'A NestJS learning project: songs/artists CRUD behind a layered ' +
+            'auth system (password + JWT, roles, 2FA, API keys).',
+        )
+        .setVersion('1.0')
+        .addBearerAuth()
+        .addApiKey(
+          { type: 'apiKey', name: 'x-api-key', in: 'header' },
+          'api-key',
+        )
+        .build(),
+    );
+    SwaggerModule.setup('api', app, swaggerDocument);
+  }
+
   // dotenv (under ConfigModule.forRoot) doesn't override a variable
   // already set in the shell environment, so `PORT=3001 npm run
   // start:dev` still wins over .env's PORT for scratch-port testing.

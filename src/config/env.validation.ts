@@ -11,6 +11,9 @@ import * as Joi from 'joi';
  * that would be safe to guess, so they're required.
  */
 export const envValidationSchema = Joi.object({
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default('development'),
   PORT: Joi.number().default(3000),
   JWT_SECRET: Joi.string().min(32).required(),
   DB_HOST: Joi.string().required(),
@@ -19,4 +22,7 @@ export const envValidationSchema = Joi.object({
   DB_PASSWORD: Joi.string().required(),
   DB_NAME: Joi.string().required(),
   MONGO_URI: Joi.string().uri().required(),
+  // A dedicated toggle rather than tying this to NODE_ENV — explicit and
+  // independently switchable, not implicitly flipped by environment.
+  ENABLE_SWAGGER: Joi.boolean().default(true),
 });
