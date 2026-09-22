@@ -383,8 +383,42 @@ closed rather than just asserted to be.
       `NODE_ENV=production` genuinely set in the running process's own
       environment, not just present in the script text. `npm test`,
       `npm run test:e2e`, and `npx eslint src/ test/` all still clean.
-- [ ] Push to GitHub, deploy to Railway
-- [ ] Fix env-related deployment bugs
+- [x] Push to GitHub, deploy to Railway — pushing to GitHub was already
+      continuously true (every step in this project has gone through a
+      PR); the new part was the actual Railway deploy. Signed up, linked
+      the GitHub repo, provisioned Railway's own Postgres and MongoDB
+      plugins, and wired the app's `DB_*`/`MONGO_URI` vars to them via
+      Railway's `${{ServiceName.VAR}}` reference syntax (e.g. `DB_HOST=
+      ${{Postgres.PGHOST}}`) — real values supplied by the platform, no
+      `.env.production` file, matching the "separation is about values,
+      not code paths" design from the previous step. Set a **fresh**
+      `JWT_SECRET` for production (never the local dev one) and left
+      `PORT` unset so the app follows whatever Railway injects (`8080`
+      by default), which `main.ts` already reads via `configService.get
+      <number>('PORT') ?? 3000`. Deployed live at
+      `n-fundamentals-pro-production.up.railway.app`.
+- [x] Fix env-related deployment bugs — a real one, not a contrived
+      example. Railway's dashboard "Custom Start Command" field
+      silently failed to take effect across **two separate attempts**
+      (confirmed via deploy logs still showing plain `npm run start` →
+      `nest start` both times, even after saving and manually
+      redeploying) — so the app was booting under the dev-mode command,
+      never running migrations, and Postgres's schema stayed empty
+      (`GET /songs` returned a real `500`, not just an empty list,
+      since the table didn't exist at all). Root-caused by actually
+      reading the deploy logs rather than guessing twice, then fixed
+      properly: committed a `railway.json` (`deploy.startCommand`),
+      which Railway's own docs confirm takes priority over dashboard
+      config — sidesteps whatever wasn't saving in the UI entirely, and
+      keeps the setting version-controlled like every other piece of
+      config in this project, rather than a manual dashboard click no
+      one else can see. Verified against the live deployment, not just
+      re-reading logs: `GET /songs` now returns the real empty-schema
+      shape (`{"data":[],"total":0}`) instead of a `500`, confirming
+      migrations genuinely ran; signed up a real user against
+      production Postgres, logged in, and hit `GET /auth/profile` with
+      the resulting JWT — a full round trip through the real database
+      and the fresh production `JWT_SECRET`, not the local dev one.
 - [ ] Testing with Jest: auto-mocking, spies, unit tests for
       controllers & services, E2E tests — **first sub-step done**: the
       E2E suite was actually broken (crashing before any test could

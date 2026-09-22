@@ -98,11 +98,21 @@ For manual, real-HTTP testing there's [`rest-client.http`](./rest-client.http)
 mutations, etc.) meant for VS Code's REST Client extension, kept in sync
 with the API as new endpoints are added.
 
+## Live deployment
+
+Deployed on Railway: **https://n-fundamentals-pro-production.up.railway.app**
+(Swagger docs at [`/api`](https://n-fundamentals-pro-production.up.railway.app/api)).
+Its own Postgres and MongoDB instances, separate from local dev.
+
 ## Project status
 
-**Project 4: Production-Grade Setup** is complete. Currently on
-**Project 5: Add MongoDB Alongside SQL** — comments on songs (with
-threaded replies) now live in MongoDB via Mongoose, polyglot alongside
-the existing Postgres/TypeORM data. See
+**Projects 4 and 5** are complete. **Project 6: Ship It** is mostly
+done — dev/prod environment separation, the Railway deploy above (plus
+a real env-related deployment bug found and fixed along the way: see
+`docs/03-journal.md`), and three unit-testing sub-steps (E2E suite,
+Songs service/controller, `RolesGuard`) establishing the
+auto-mocking/spies pattern. Deliberately left open: full test coverage
+for the rest of the app (auth's other services, comments) — a scope
+decision, not an oversight. See
 [`docs/01-progress.md`](./docs/01-progress.md) for the live checklist
 across every project in the roadmap.
