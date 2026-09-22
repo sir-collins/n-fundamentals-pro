@@ -1333,3 +1333,80 @@ rather than trusting the script text alone — confirmed
 `NODE_ENV=production` was genuinely set inside the process. `npm
 test`, `npm run test:e2e`, and `npx eslint src/ test/` all still
 clean throughout.
+
+## 2026-09-22 — Deploying to Railway, and a real deployment bug
+
+The last two Project 6 items, done together since the second only
+exists because of the first: pushing to GitHub was already
+continuously true by this point (every step in this project has gone
+through a PR), so the actual new work was the Railway deploy itself —
+and the roadmap's "fix env-related deployment bugs" bullet turned out
+not to be a hypothetical box to check, but something that genuinely
+happened on the very first real attempt.
+
+Account creation, linking the GitHub repo, and provisioning Railway's
+Postgres/MongoDB plugins all happened directly in Railway's dashboard —
+not something to automate away, since account/billing setup is
+deliberately the user's own action. Wiring the app's own `DB_*`/
+`MONGO_URI` vars to Railway's provisioned databases used Railway's
+`${{ServiceName.VAR}}` reference syntax (confirmed the exact variable
+names — `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` for
+Postgres, `MONGO_URL` for Mongo — by reading Railway's own docs rather
+than guessing at plausible-sounding names) rather than copying literal
+values by hand — real values supplied by the platform, matching the
+"environment separation is about which values get supplied, not
+different code paths" framing from the previous step. Generated a
+fresh `JWT_SECRET` for production rather than reusing the one sitting
+in the local `.env` file.
+
+The first real deploy crashed exactly as expected — the Joi validation
+error for the missing required vars, working correctly even in a
+completely new environment, which was itself a small confirmation that
+Project 4's config work travels correctly. Fixing that surfaced the
+first genuine finding: Railway auto-detected and ran the plain `start`
+script (`nest start`, the dev-mode command) rather than `start:prod` —
+worth catching before assuming the deploy was otherwise fine, since it
+meant `NODE_ENV` would never actually become `production` and
+migrations would never run.
+
+The dashboard's own "Custom Start Command" field is where this should
+have been fixed, and it looked fixed — typed, saved, manually
+redeployed. It wasn't: the very next deploy's logs still showed plain
+`npm run start`. Tried again, same result. Two failed attempts at the
+same UI step is a real signal to stop trusting that path, not a reason
+to try a third time — switched to `railway.json`
+(`deploy.startCommand`), a committed config file Railway's own docs
+confirm takes priority over whatever the dashboard has. This is a
+better fix on its own merits too, not just a workaround: like every
+other piece of this project's config (`docker-compose.yml`,
+`env.validation.ts`, the Jest configs), it's now version-controlled and
+visible in the repo, not a manual click sitting invisibly in a
+dashboard only one person can see or verify.
+
+Each fix was verified against the *actual deployed app*, not just
+re-read logs and assumed correct: after the `railway.json` fix
+redeployed, `GET /songs` changed from a raw `500` (the table genuinely
+didn't exist — migrations had never run under the wrong start command)
+to the real empty-schema shape `{"data":[],"total":0}`, proving the
+migration step actually executed this time. Then signed up a real
+user against production Postgres, logged in, and called `GET
+/auth/profile` with the resulting JWT — a full round trip through the
+real deployed database and the fresh production secret, live at
+`n-fundamentals-pro-production.up.railway.app`.
+
+Deliberately not chased further in this step: promoting a user to
+admin in production to verify song creation and the Mongo-backed
+comments flow end-to-end there too. Boot logs already confirm
+`MongooseCoreModule` initialized cleanly (a failed Mongo connection
+would have failed the whole boot, same as Postgres), and the core
+auth+Postgres path is now proven for real — good enough to call this
+item done without manufacturing more verification than the roadmap
+actually asks for.
+
+This leaves Project 6 mostly done: dev/prod separation, the deploy
+itself, a real deployment bug found and fixed, and three solid testing
+sub-steps establishing the auto-mocking/spies/E2E pattern. The
+"Testing with Jest" item stays intentionally unchecked at the top
+level — full coverage of every remaining service/controller was a
+deliberate scope decision to defer, not an oversight, back when the
+RolesGuard step wrapped up.
