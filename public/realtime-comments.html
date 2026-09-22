@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Live Song Comments — n-fundamentals-pro</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  #status { font-weight: bold; }
+  #status.connected { color: #1a7f37; }
+  #status.disconnected { color: #b91c1c; }
+  #comments { list-style: none; padding: 0; }
+  #comments li { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; }
+  .meta { color: #666; font-size: 0.85rem; }
+  input, button { font-size: 1rem; padding: 0.4rem; }
+</style>
+</head>
+<body>
+<h1>Live Song Comments</h1>
+<p>
+  A demo of <code>CommentsGateway</code> (Project 7 — WebSockets): enter a
+  real song id, subscribe, then post a comment on that song from another
+  window (Swagger UI at <a href="/api">/api</a>, or
+  <code>rest-client.http</code>). It should appear below instantly, with
+  no page reload or polling.
+</p>
+
+<p id="status" class="disconnected">disconnected</p>
+
+<input id="songId" type="number" placeholder="Song id" />
+<button id="subscribeBtn">Subscribe</button>
+
+<ul id="comments"></ul>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script>
+  const statusEl = document.getElementById('status');
+  const commentsEl = document.getElementById('comments');
+  const songIdInput = document.getElementById('songId');
+  const subscribeBtn = document.getElementById('subscribeBtn');
+
+  // Same origin as the page itself — no CORS config needed on the
+  // gateway (see comments.gateway.ts).
+  const socket = io();
+
+  socket.on('connect', () => {
+    statusEl.textContent = 'connected';
+    statusEl.className = 'connected';
+  });
+
+  socket.on('disconnect', () => {
+    statusEl.textContent = 'disconnected';
+    statusEl.className = 'disconnected';
+  });
+
+  socket.on('newComment', (comment) => {
+    const li = document.createElement('li');
+    li.innerHTML =
+      '<div>' + comment.body.replace(/</g, '&lt;') + '</div>' +
+      '<div class="meta">' + comment.authorEmail +
+      (comment.parentComment ? ' (reply)' : '') + '</div>';
+    commentsEl.prepend(li);
+  });
+
+  subscribeBtn.addEventListener('click', () => {
+    const songId = Number(songIdInput.value);
+    if (!songId) return;
+    socket.emit('subscribeToSong', songId);
+    commentsEl.innerHTML = '';
+    const li = document.createElement('li');
+    li.textContent = 'Subscribed to song ' + songId + ' — waiting for new comments...';
+    commentsEl.appendChild(li);
+  });
+</script>
+</body>
+</html>

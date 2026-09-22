@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { CommentsGateway } from './comments.gateway';
 
 /**
  * Backed by MongoDB via Mongoose. Follows `SongsService`'s division of
@@ -15,10 +16,13 @@ export class CommentsService {
   constructor(
     @InjectModel(Comment.name)
     private readonly commentModel: Model<CommentDocument>,
+    private readonly commentsGateway: CommentsGateway,
   ) {}
 
   /**
-   * Create a comment on `songId`, authored by the caller.
+   * Create a comment on `songId`, authored by the caller. Broadcasts it
+   * to everyone currently subscribed to that song's WebSocket room
+   * (`CommentsGateway`) before returning.
    * @throws BadRequestException if `parentCommentId` doesn't exist, or
    *   belongs to a different song — a reply must live on the same song
    *   as the comment it replies to.
@@ -43,13 +47,15 @@ export class CommentsService {
       parentComment = parent._id;
     }
 
-    return this.commentModel.create({
+    const comment = await this.commentModel.create({
       songId,
       authorId,
       authorEmail,
       body: dto.body,
       parentComment,
     });
+    this.commentsGateway.broadcastNewComment(songId, comment);
+    return comment;
   }
 
   /**

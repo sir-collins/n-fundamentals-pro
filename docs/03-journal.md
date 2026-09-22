@@ -1410,3 +1410,78 @@ sub-steps establishing the auto-mocking/spies/E2E pattern. The
 level — full coverage of every remaining service/controller was a
 deliberate scope decision to defer, not an oversight, back when the
 RolesGuard step wrapped up.
+
+## 2026-09-22 — Live comment notifications over WebSockets (Project 7)
+
+First Project 7 sub-step. The roadmap's own example outcome was
+"live notifications or chat," left open rather than prescribed — picked
+live comment notifications on songs specifically because it continues
+real work already in the app (Project 5's Comments) instead of bolting
+on an unrelated chat demo just to exercise the technology. Someone
+viewing a song's thread now sees new comments and replies the instant
+they're posted, no polling.
+
+Same version-compatibility habit as every dependency since the
+`@nestjs/config` ESM-major trap: checked `@nestjs/websockets`'s
+peerDependencies before installing, found the same shape of trap
+again — `latest` wants `@nestjs/core@^12.0.0`, this project runs
+`^11.0.1` — and pinned `@nestjs/websockets@^11.2.5` +
+`@nestjs/platform-socket.io@^11.2.5` instead of trusting a bare
+install. `socket.io` itself came along automatically as a real
+(non-peer) dependency of the platform package.
+
+Decided against `@nestjs/event-emitter` for wiring the broadcast,
+even though it's the more "decoupled" option — `CommentsService`
+injects `CommentsGateway` directly and calls it after a successful
+save. Reason: `@nestjs/event-emitter` is Project 10's own named
+capstone item ("decouple side effects, e.g. on user signup send a
+welcome email"). Reaching for it here, for a single emitter with a
+single listener, would both pre-empt that later step and add
+indirection this specific relationship doesn't need yet.
+
+Caught a real bug while writing the gateway, not a hypothetical one:
+`client.join(...)` in the `subscribeToSong` handler returns a
+`Promise<void>` (Socket.IO's join is async for adapter compatibility,
+e.g. Redis), and the handler wasn't awaiting it — a real floating
+promise, not a style nit, since it meant a client's `subscribeToSong`
+acknowledgment could resolve before the join had actually completed.
+Caught by ESLint's `no-floating-promises` rather than missed
+entirely; fixed by making the handler `async`/`await` rather than
+just silencing the warning with `void`, since here the completion
+genuinely matters — unlike `main.ts`'s pre-existing bare `bootstrap()`
+call, which is fine to leave un-awaited.
+
+No CORS configuration on the gateway, on purpose — the demo page
+(`public/realtime-comments.html`) is served by this same Nest app
+(`app.useStaticAssets(...)` in `main.ts`, using
+`@nestjs/platform-express`'s existing static support rather than
+adding a new `@nestjs/serve-static` dependency for something Express
+already does), so it's same-origin. Consistent with the "skip CORS
+until a real cross-origin client needs it" decision from the Railway
+deploy step — still true here, so still skipped.
+
+Verified against the real running app with a scripted client first,
+not a manual click-through: a `socket.io-client` script (new
+devDependency) connected, subscribed to a real song, and received the
+exact broadcast payload while a comment was posted via `curl` in
+parallel — proving the whole path end to end, not just that the
+server didn't crash. Went a step further than "it broadcasts" to
+confirm it actually *scopes* correctly: a second client subscribed to
+a different song received nothing when the first song got a new
+comment, confirming Socket.IO's room mechanism is doing real
+isolation, not just being used decoratively.
+
+The actual browser demo page got its own real pass too, done by the
+user directly rather than automated: opened
+`realtime-comments.html`, subscribed to a real song, and posted a
+comment from a separate window (Swagger UI) — appeared live, no
+refresh. Then went further than the walkthrough asked for and opened
+the page in **two tabs**, both subscribed to the same song, and
+confirmed a single comment reached both simultaneously — a stronger
+check than the scripted test in one real way: it proves Socket.IO's
+room broadcast actually fans out to multiple concurrent subscribers,
+not just the one client the automated check happened to use.
+
+`npm test` (28/4), `npm run test:e2e` (1/1), and `npx eslint src/
+test/` all still clean. SWC (the roadmap's other Project 7 bullet)
+remains its own separate, later sub-step.

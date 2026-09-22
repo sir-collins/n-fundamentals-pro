@@ -23,6 +23,8 @@ each piece was built the way it was — start at
 - **bcrypt** for password hashing, **otplib** + **qrcode** for TOTP-based
   two-factor auth
 - **Swagger/OpenAPI** (`@nestjs/swagger`) for interactive, browsable API docs
+- **WebSockets** (`@nestjs/websockets` + Socket.IO) for live comment
+  notifications — see [`public/realtime-comments.html`](./public/realtime-comments.html)
 
 ## Getting started
 
@@ -113,6 +115,8 @@ a real env-related deployment bug found and fixed along the way: see
 Songs service/controller, `RolesGuard`) establishing the
 auto-mocking/spies pattern. Deliberately left open: full test coverage
 for the rest of the app (auth's other services, comments) — a scope
-decision, not an oversight. See
-[`docs/01-progress.md`](./docs/01-progress.md) for the live checklist
-across every project in the roadmap.
+decision, not an oversight. Now on **Project 7: Real-Time Layer** —
+live comment notifications over WebSockets are done (see the Stack
+section above); Speedy Web Compiler is its own separate, later
+sub-step. See [`docs/01-progress.md`](./docs/01-progress.md) for the
+live checklist across every project in the roadmap.

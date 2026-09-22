@@ -511,7 +511,53 @@ closed rather than just asserted to be.
       failed, reverted. `npm test` now runs 28 tests across 4 suites;
       `npx eslint src/` and `npm run test:e2e` both still clean.
 
-## Project 7 (Branch A): Real-Time Layer — Not started
+## Project 7 (Branch A): Real-Time Layer — 🚧 In progress
+
+- [ ] Speedy Web Compiler setup with Nest v10 — deliberately deferred to
+      its own sub-step; orthogonal tooling, not part of this outcome.
+- [x] Build a WebSocket server — feature chosen deliberately over
+      generic chat: **live comment notifications on songs**, directly
+      continuing Project 5's Comments work. `@nestjs/websockets` +
+      `@nestjs/platform-socket.io` pinned to `^11.2.5` (same
+      version-trap category as every dependency since `@nestjs/config`
+      — `latest` needs `@nestjs/core@^12.0.0`, this project runs
+      `^11.0.1`). New `CommentsGateway`
+      (`src/comments/comments.gateway.ts`): `subscribeToSong` joins a
+      per-song Socket.IO room (`song:<id>`); `broadcastNewComment`,
+      called directly by `CommentsService.create()` (not
+      event-decoupled — `@nestjs/event-emitter` is deliberately
+      Project 10's own capstone item, not reached for early), emits to
+      that room. No CORS config on the gateway — the demo page is
+      served by this same app, same origin, consistent with deferring
+      CORS until a real cross-origin client needs it (Railway step).
+- [x] Send messages from a small frontend page — new
+      `public/realtime-comments.html`, vanilla JS + `socket.io-client`
+      via CDN (no build step), served through
+      `app.useStaticAssets(...)` in `main.ts` using
+      `@nestjs/platform-express`'s existing static support rather than
+      adding `@nestjs/serve-static` for something Express already
+      provides. Lets you subscribe to a song id and watch comments
+      appear live as they're posted from another window.
+
+      Verified against the real running app, not just reasoning about
+      it: a `socket.io-client` script (devDependency) connected,
+      subscribed to a real song, and — while a comment was posted via
+      `curl` in a separate step — received the exact broadcast payload
+      matching what was actually saved. Separately confirmed **room
+      isolation**, not just that broadcasting works at all: a second
+      client subscribed to a different song received nothing when the
+      first song got a new comment. `npm run start:dev` boot log
+      confirmed the gateway registered
+      (`CommentsGateway subscribed to the "subscribeToSong" message`).
+      The actual demo page got a manual pass too: opened in the
+      browser, subscribed, and a comment posted from Swagger UI
+      appeared live; then opened in **two tabs** subscribed to the
+      same song and confirmed one comment reached both simultaneously
+      — proving the broadcast genuinely fans out to multiple
+      concurrent subscribers, not just the one client the scripted
+      check happened to use.
+      `npm test` (28/4), `npm run test:e2e` (1/1), and `npx eslint
+      src/ test/` all still clean.
 
 ## Project 8 (Branch B): GraphQL API — Not started
 

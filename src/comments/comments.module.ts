@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CommentsController } from './comments.controller';
 import { CommentsService } from './comments.service';
+import { CommentsGateway } from './comments.gateway';
 import { Comment, CommentSchema } from './schemas/comment.schema';
 import { SongsModule } from '../songs/songs.module';
 
@@ -11,7 +12,10 @@ import { SongsModule } from '../songs/songs.module';
  * `CommentsService` has something to inject — the Mongoose equivalent of
  * `TypeOrmModule.forFeature([Song])` in `SongsModule`. `SongsModule` is
  * imported for its exported `SongsService`, used to confirm a `songId`
- * refers to a real song before attaching a comment to it.
+ * refers to a real song before attaching a comment to it. `CommentsGateway`
+ * broadcasts new comments over WebSockets to whoever's subscribed to that
+ * song's room — injected directly into `CommentsService`, not
+ * event-decoupled (that's Project 10's own capstone item).
  */
 @Module({
   imports: [
@@ -19,6 +23,6 @@ import { SongsModule } from '../songs/songs.module';
     SongsModule,
   ],
   controllers: [CommentsController],
-  providers: [CommentsService],
+  providers: [CommentsService, CommentsGateway],
 })
 export class CommentsModule {}
