@@ -1485,3 +1485,63 @@ not just the one client the automated check happened to use.
 `npm test` (28/4), `npm run test:e2e` (1/1), and `npx eslint src/
 test/` all still clean. SWC (the roadmap's other Project 7 bullet)
 remains its own separate, later sub-step.
+
+## 2026-09-23 — Speedy Web Compiler, and completing Project 7
+
+Last Project 7 sub-step, deferred from the WebSocket work since it's
+orthogonal tooling — a build-speed concern, not part of "live
+notifications" as an outcome.
+
+Checked `@swc/core`/`@swc/cli`'s dependency shape before installing,
+same habit as every package since the `@nestjs/config` trap — and for
+once found genuinely nothing to worry about: unlike almost every
+`@nestjs/*` package added this whole project, they declare zero
+dependency on `@nestjs/core`'s major version at all. They're generic
+compiler tooling Nest's CLI knows how to invoke via its builder
+abstraction, not Nest packages themselves.
+
+Added `start:swc` as a new script rather than touching `nest-cli.json`'s
+default builder — identical reasoning to `start:hmr`: don't silently
+change what every flagless `build`/`start`/`start:dev` command does.
+This project now has four ways to run in dev (tsc watch, webpack HMR,
+SWC, plus plain debug) — genuinely more than a small learning project
+strictly needs, worth naming rather than pretending each addition was
+obviously necessary. Kept `--type-check` on despite its cost to SWC's
+raw speed advantage — SWC alone is transpile-only, and this project
+has made the safety-over-speed call at every prior fork of this shape
+(HMR's process-fork trade-off, the E2E ESM transform, `unbound-method`
+scoped rather than silenced project-wide).
+
+Hit a real, concrete bug on the very first `start:swc` run, not a
+hypothetical: `--watch` crashed immediately with `Cannot find module
+'chokidar'`. `@swc/cli` lists it as an *optional* dependency, and npm
+had skipped installing it on this platform — the error message said
+as much ("Chokidar is likely not supported on your platform"), which
+turned out to be misleading; it installs and works fine once added as
+an explicit devDependency, so "likely not supported" was really "not
+installed," not a real platform incompatibility.
+
+Verified the actual claims a fast compiler + parallel type-checker
+makes, not just that the command exits zero: the real speed win (47
+files, ~150-260ms per compile, vs. tsc's multi-second cold build);
+that decorator metadata survives the swap intact — the standard risk
+with SWC + a decorator-heavy framework like Nest — confirmed by every
+module (including `CommentsGateway`'s WebSocket message registration)
+initializing normally on boot, not just "no compile error"; and that
+`--type-check` catches something real, by deliberately changing
+`SongsService.findOne`'s parameter type from `number` to `string` and
+watching the parallel checker report the exact 5 downstream call
+sites it broke (two controllers, an internal `this.findOne()` call,
+and the TypeORM `where` clause), then reverting and confirming a
+clean `0 issues` pass again.
+
+One honest nuance the walkthrough didn't fully anticipate, worth
+recording precisely rather than glossing over: `--type-check` reports
+errors clearly, but doesn't actually block anything — SWC compiled and
+the (type-broken) app booted and kept serving anyway, both times,
+errors and all. The type-checker is a fast, visible feedback signal
+running alongside the app, not a gate in front of it. Confirmed every
+other existing path — `npm run build` (plain tsc), `npm test`, `npm
+run test:e2e`, `npx eslint` — completely unaffected throughout.
+
+This completes all three Project 7 roadmap bullets.
