@@ -511,10 +511,40 @@ closed rather than just asserted to be.
       failed, reverted. `npm test` now runs 28 tests across 4 suites;
       `npx eslint src/` and `npm run test:e2e` both still clean.
 
-## Project 7 (Branch A): Real-Time Layer — 🚧 In progress
+## Project 7 (Branch A): Real-Time Layer — ✅ Done
 
-- [ ] Speedy Web Compiler setup with Nest v10 — deliberately deferred to
-      its own sub-step; orthogonal tooling, not part of this outcome.
+- [x] Speedy Web Compiler setup — `@swc/core` + `@swc/cli` (confirmed no
+      version trap first — unlike almost every `@nestjs/*` package added
+      so far, these have zero dependency on `@nestjs/core`'s major
+      version). New `start:swc` script (`nest start --builder swc
+      --type-check --watch`) — a new script, not a replacement for
+      `start:dev`; `nest-cli.json`'s default builder stays untouched,
+      same reasoning as `start:hmr`. `--type-check` kept on
+      deliberately: SWC alone is transpile-only (no type-checking), and
+      this project has treated every other speed-vs-safety trade-off
+      the same way. Hit a real, concrete bug immediately: `--watch`
+      crashed with `Cannot find module 'chokidar'` — an *optional*
+      dependency of `@swc/cli` that npm skipped on this platform.
+      Fixed by installing it explicitly as a devDependency rather than
+      working around it. Verified thoroughly, not just "it boots":
+      confirmed the actual speed win (47 files compiled in ~150-260ms,
+      vs. tsc's multi-second cold compile); confirmed decorator
+      metadata/DI survives SWC intact (every module — including
+      `CommentsGateway`'s WebSocket registration — initialized
+      normally on boot); proved `--type-check` genuinely catches real
+      errors by deliberately introducing one (changed
+      `SongsService.findOne`'s param type), watching the parallel
+      type-checker report the exact 5 real call-sites it broke, then
+      reverting and confirming a clean `0 issues` pass again. One
+      honest nuance worth recording: `--type-check` reports errors
+      clearly but does **not** block the app from booting anyway — SWC
+      compiles and starts regardless, the type-checker just runs
+      alongside it, so this is a fast feedback signal to watch, not a
+      hard gate. `npm run build` (plain tsc), `npm test` (28/4), `npm
+      run test:e2e` (1/1), and `npx eslint src/ test/` all confirmed
+      completely unaffected — this was genuinely additive.
+
+Completes all three roadmap bullets for Project 7.
 - [x] Build a WebSocket server — feature chosen deliberately over
       generic chat: **live comment notifications on songs**, directly
       continuing Project 5's Comments work. `@nestjs/websockets` +

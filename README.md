@@ -63,6 +63,10 @@ A couple of alternate run modes exist alongside plain `start:dev`:
   incremental rebuilds, no process fork on save); see
   `docs/03-journal.md` for why it deliberately uses `nest build`, not
   `nest start`
+- `npm run start:swc` — SWC-based compilation (~150-260ms full
+  compiles vs. tsc's multi-second cold build), with a parallel
+  `tsc --noEmit` pass (`--type-check`) so real type errors still get
+  caught — SWC alone is transpile-only
 
 ## API Documentation (Swagger)
 
@@ -115,8 +119,8 @@ a real env-related deployment bug found and fixed along the way: see
 Songs service/controller, `RolesGuard`) establishing the
 auto-mocking/spies pattern. Deliberately left open: full test coverage
 for the rest of the app (auth's other services, comments) — a scope
-decision, not an oversight. Now on **Project 7: Real-Time Layer** —
-live comment notifications over WebSockets are done (see the Stack
-section above); Speedy Web Compiler is its own separate, later
-sub-step. See [`docs/01-progress.md`](./docs/01-progress.md) for the
-live checklist across every project in the roadmap.
+decision, not an oversight. **Project 7: Real-Time Layer** is complete
+— live comment notifications over WebSockets (see the Stack section
+above) and `start:swc` (see "Getting started" above). See
+[`docs/01-progress.md`](./docs/01-progress.md) for the live checklist
+across every project in the roadmap.
