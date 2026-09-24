@@ -1545,3 +1545,82 @@ other existing path — `npm run build` (plain tsc), `npm test`, `npm
 run test:e2e`, `npx eslint` — completely unaffected throughout.
 
 This completes all three Project 7 roadmap bullets.
+
+## 2026-09-24 — GraphQL server setup, first Project 8 sub-step
+
+The roadmap names Project 8 "the meatiest branch, treat as its own
+mini-course" — 7 pieces, not one step. Sequenced it the way every
+other multi-part project here has been: smallest slice that proves
+the whole pattern (server boot, code-first types, a resolver actually
+calling an existing service) before layering in the other six —
+error handling, GraphQL auth, subscriptions, resolver testing,
+caching/DataLoader, calling an external REST API — as their own later
+sub-steps.
+
+The framing worth being deliberate about from the start: GraphQL
+resolvers are a **second API layer over the same domain**, not a
+separate app. `SongsResolver` injects the exact same `SongsService`
+`SongsController` already uses — no business logic duplicated,
+proven concretely later by cross-checking a GraphQL-created song
+through the existing REST `GET /songs/:id` and seeing identical data.
+Code-first, not schema-first, specifically because it matches a
+pattern this project has used since the Swagger step: layer decorators
+onto classes that already exist (`@ObjectType()`/`@Field()` join
+`Song`/`Artist` right next to their `@ApiProperty()`s;
+`@InputType()`/`@ArgsType()` join `CreateSongDto`/`PaginationQueryDto`
+right next to their `class-validator` decorators) rather than
+maintaining a parallel GraphQL-only type tree that could drift out of
+sync with the REST one.
+
+Same version-compatibility habit as every `@nestjs/*` package since
+the `@nestjs/config` trap, and the same shape of trap again:
+`@nestjs/graphql`/`@nestjs/apollo` `latest` wants
+`@nestjs/core@^12.0.0`; this project runs `^11.0.1`. Checked via `npm
+view` and pinned `@nestjs/graphql@^13.x` + `@nestjs/apollo@^13.4.5` +
+`@apollo/server@^5` — all confirmed compatible before installing.
+
+But the compatibility check didn't catch everything, and that's worth
+recording honestly rather than presenting this as a clean pin-and-go:
+the very first boot crashed with `The "@as-integrations/express5"
+package is missing`. This package wasn't in `@nestjs/apollo`'s own
+`peerDependencies` output at all — only the Fastify variant showed up
+there, even though this project uses Express
+(`@nestjs/platform-express`). The Express integration turned out to
+be a separate, undeclared runtime dependency the driver only surfaces
+by actually trying to boot, not something `npm view`'s static peer-dep
+listing could have caught in advance. Installed
+`@as-integrations/express5` (confirmed against the already-installed
+`express@5.2.1` first) once the real error named it. Worth
+remembering for next time: a peerDependencies check is a strong signal,
+not a complete guarantee — some optional/conditional dependencies only
+reveal themselves at runtime.
+
+Two things deliberately left undone here, not silently skipped:
+mutations have no auth check yet (`createSong`/`updateSong`/
+`deleteSong` are wide open) — GraphQL needs its own guard mechanism
+(`GqlExecutionContext`, different from the REST `AuthGuard`/
+`RolesGuard` pairing), and rebuilding auth for GraphQL is explicitly
+its own later roadmap bullet, not something to start early just
+because the gap is visible. And "not found" resolves to a clean
+`null` (`song(id: 99999)` returns `null`, not an error) — the
+standard GraphQL idiom for a missing single-item query, not the
+REST-style thrown 404; proper GraphQL error handling is also its own
+later sub-step.
+
+`schema.gql`, generated automatically from the decorators
+(`autoSchemaFile` in `app.module.ts`), gets committed rather than
+gitignored — a real, diffable artifact showing exactly what the API
+surface looks like, the same treatment as the generated migration
+files and `railway.json`.
+
+Verified against the real running app end to end, not just that it
+compiled: a `songs` query returned real existing Postgres data (songs
+from earlier verification steps in this project, artists nested
+correctly); a `createSong` mutation persisted a song immediately
+visible through the existing REST endpoint; `updateSong` and
+`deleteSong` both confirmed the same way, including the deleted
+song's REST endpoint genuinely returning `404` afterward — proof the
+two API layers aren't just structurally similar, they're reading and
+writing the identical underlying data. `npm test` (28/4), `npm run
+test:e2e` (1/1), and `npx eslint src/ test/` all confirmed completely
+unaffected.

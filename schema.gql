@@ -1,0 +1,46 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Artist {
+  id: Int!
+  name: String!
+}
+
+input CreateSongDto {
+  artists: [String!]!
+  duration: String!
+  releaseDate: String!
+  title: String!
+}
+
+type Mutation {
+  createSong(input: CreateSongDto!): Song!
+  deleteSong(id: Int!): Boolean!
+  updateSong(id: Int!, input: UpdateSongInput!): Song
+}
+
+type PaginatedSongs {
+  data: [Song!]!
+  total: Int!
+}
+
+type Query {
+  song(id: Int!): Song
+  songs(limit: Int = 10, page: Int = 1): PaginatedSongs!
+}
+
+type Song {
+  artists: [Artist!]!
+  duration: String!
+  id: Int!
+  releaseDate: String!
+  title: String!
+}
+
+input UpdateSongInput {
+  artists: [String!]
+  duration: String
+  releaseDate: String
+  title: String
+}

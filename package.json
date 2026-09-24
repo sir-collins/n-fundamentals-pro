@@ -27,9 +27,13 @@
     "seed": "ts-node src/database/seed.ts"
   },
   "dependencies": {
+    "@apollo/server": "^5.5.1",
+    "@as-integrations/express5": "^1.1.2",
+    "@nestjs/apollo": "^13.4.5",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/graphql": "^13.4.5",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/mongoose": "^12.0.0",
     "@nestjs/passport": "^11.0.5",
@@ -41,6 +45,7 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "graphql": "^16.14.2",
     "joi": "^18.2.8",
     "mongoose": "^8.24.4",
     "otplib": "^12.0.1",

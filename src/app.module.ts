@@ -1,7 +1,10 @@
+import { join } from 'path';
 import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SongsModule } from './songs/songs.module';
@@ -57,6 +60,18 @@ import { envValidationSchema } from './config/env.validation';
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGO_URI'),
       }),
+    }),
+    // A second, parallel API layer over the same domain/services as the
+    // REST controllers — code-first: types/inputs come from decorators
+    // already on existing classes (Song, CreateSongDto, ...), not a
+    // hand-written schema. autoSchemaFile writes the generated schema to
+    // a real, committed file (not gitignored) so schema changes show up
+    // as a visible diff in PRs, same as every other generated-but-tracked
+    // artifact in this project (migrations, railway.json).
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), 'schema.gql'),
+      sortSchema: true,
     }),
     SongsModule,
     AuthModule,

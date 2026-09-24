@@ -589,7 +589,57 @@ Completes all three roadmap bullets for Project 7.
       `npm test` (28/4), `npm run test:e2e` (1/1), and `npx eslint
       src/ test/` all still clean.
 
-## Project 8 (Branch B): GraphQL API — Not started
+## Project 8 (Branch B): GraphQL API — 🚧 In progress
+
+- [x] Set up a GraphQL server; define Queries & Mutations; resolve
+      them — first sub-step of the roadmap's own "meatiest branch,
+      treat as its own mini-course" (7 pieces total; the other 6 —
+      error handling, GraphQL auth, subscriptions, resolver testing,
+      caching/DataLoader, calling an external REST API — are later,
+      separate sub-steps, same sequencing as every other multi-part
+      project here). `@nestjs/graphql` + `@nestjs/apollo` +
+      `@apollo/server` + `graphql` — checked compatibility first, same
+      habit as every `@nestjs/*` addition: `latest` needs
+      `@nestjs/core@^12.0.0`, this project runs `^11.0.1`, pinned
+      `@nestjs/graphql@^13.x` + `@nestjs/apollo@^13.4.5` +
+      `@apollo/server@^5` instead. Code-first: `@ObjectType()`/
+      `@Field()` sit directly on the existing `Song`/`Artist`
+      entities, `@InputType()`/`@ArgsType()` on the existing
+      `CreateSongDto`/`PaginationQueryDto` — same multi-decorator
+      pattern already used for Swagger (`@ApiProperty()` right next to
+      `@Column()`), not a separate GraphQL-only type tree to keep in
+      sync. New `SongsResolver` (`src/songs/songs.resolver.ts`)
+      injects the same `SongsService` the REST controller already
+      uses — a second API layer, zero duplicated business logic.
+      Hit one real, concrete bug mid-implementation: boot crashed with
+      `The "@as-integrations/express5" package is missing` — not
+      listed in `@nestjs/apollo`'s own `peerDependencies` output (only
+      the Fastify variant showed there), so the earlier compatibility
+      check didn't catch it; installed once the actual boot error
+      surfaced it. Deliberately unguarded for now:
+      `createSong`/`updateSong`/`deleteSong` have no auth check yet —
+      GraphQL needs its own guard mechanism (`GqlExecutionContext`),
+      and rebuilding auth for GraphQL is explicitly its own later
+      sub-step, not something to start early here. Deliberately
+      simple "not found" handling too: `song(id: <missing>)` returns
+      `null` (GraphQL's own idiom), not a REST-style thrown error —
+      real GraphQL error handling is also its own later sub-step.
+      `schema.gql` (code-first-generated) is committed, not
+      gitignored — a visible, diffable schema in PRs, same as every
+      other generated-but-tracked artifact here (migrations,
+      `railway.json`).
+
+      Verified against the real running app, not just "it compiles":
+      a real `songs` query returned actual existing Postgres data
+      (songs from prior verification steps, with real Artist rows
+      nested correctly); a real `createSong` mutation persisted a new
+      song, immediately visible via the existing REST `GET
+      /songs/:id` — proving both API layers genuinely share the same
+      underlying data; `updateSong` and `deleteSong` both confirmed
+      against REST too (the deleted song's REST endpoint returned a
+      real `404` afterward); `song(id: 99999)` returned a clean
+      `null`, no crash. `npm test` (28/4), `npm run test:e2e` (1/1),
+      and `npx eslint src/ test/` all confirmed unaffected.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
