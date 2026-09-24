@@ -1624,3 +1624,81 @@ two API layers aren't just structurally similar, they're reading and
 writing the identical underlying data. `npm test` (28/4), `npm run
 test:e2e` (1/1), and `npx eslint src/ test/` all confirmed completely
 unaffected.
+
+## 2026-09-24 — Error handling in GraphQL, and a bug that made it real
+
+Second Project 8 sub-step. Didn't start from the roadmap bullet in the
+abstract — tested the GraphQL layer directly first, the same way every
+"is this actually done" question in this project gets answered, and
+found the step already had a genuine reason to exist: any
+`HttpException` thrown inside a resolver, including every
+`class-validator` failure on `createSong`'s own input, crashed with
+`response.status is not a function` and leaked a full internal stack
+trace to the client. Not a hypothetical gap — an actively broken path,
+reachable by anyone sending slightly malformed GraphQL input.
+
+Root cause, and worth being precise about rather than reaching for the
+first plausible-sounding fix: `HttpExceptionFilter`
+(`src/common/filters/http-exception.filter.ts`) is globally registered
+in `main.ts` and assumes every exception it catches has a real Express
+`Response` to call `.status().json()` on. True for REST. GraphQL
+resolvers run through a completely different Nest pathway —
+`ExternalExceptionsHandler`, not `ExceptionsHandler` — where no such
+response object exists, so the filter's own attempt to use it threw a
+second, unhandled error on top of whatever the original exception was.
+
+Before reaching for "just add a second filter for GraphQL," actually
+read how Nest resolves multiple registered filters —
+`@nestjs/core/exceptions/{base-exception-filter-context,
+external-exceptions-handler, external-exception-filter-context}.js`
+and `helpers/context-creator.js` — rather than guess. What it does:
+merges `[...global, ...class, ...method]`-scoped filters, reverses the
+whole array (method/class-scoped filters get tried first), then picks
+the *first* one whose `@Catch()` type matches via `Array.find()`. Two
+separate globally-registered filters both declaring `@Catch
+(HttpException)` would genuinely compete for the same exception with
+no clear "this one wins" guarantee from the code alone — confirmed
+directly from source, not inferred. So the fix is deliberately **one
+filter, context-aware** — `host.getType<GqlContextType>()` (the exact
+string `'graphql'` confirmed from `@nestjs/graphql`'s own
+`gql-execution-context.d.ts`, not guessed either) branches between the
+REST path (unchanged, still writes to the real response) and a new
+GraphQL path that returns a `GraphQLError` for Apollo to serialize
+instead.
+
+Closed out a decision step 1 deliberately deferred at the same time:
+`song`/`updateSong`/`deleteSong` now throw a real `NotFoundException`
+(same messages as `SongsController`'s REST equivalents) instead of
+returning `null`/`false`. That wasn't just "more correct" in the
+abstract — it's what actually gives the new filter something real to
+prove itself against; returning `null` everywhere would have meant
+shipping an error filter with nothing in this resolver left to
+exercise it. `schema.gql` picked up the honest consequence: `song` and
+`updateSong` now show `Song!`, not `Song` — they genuinely can't
+return nothing anymore.
+
+One verification step worth calling out specifically, because it's
+the kind of thing that's easy to declare "fixed" prematurely: after
+the fix, a dev-mode GraphQL error still showed a `stacktrace` array in
+`extensions`. Rather than assume that was leftover from the bug or
+add code to strip it, checked what it actually was first — built for
+real (`npm run build`) and ran `start:prod`, and the stack trace
+disappeared entirely. It's Apollo Server's own standard, intentional,
+`NODE_ENV`-gated dev convenience, not a leak this filter introduced or
+needs to suppress. Worth the extra step rather than either declaring
+victory on a probably-fine assumption or writing unnecessary
+stack-trace-stripping code for something already handled correctly
+one layer up.
+
+Verified everything end to end against the real running app: the
+exact original bug repro (invalid `releaseDate`) now returns the real
+validation message with a sensible `extensions.code`, not a crash;
+all three not-found cases (`song`, `updateSong`, `deleteSong`) throw
+properly with the right status and message; the full create → update
+→ delete happy path still works via GraphQL, cross-checked against
+REST at every step including the deleted song's REST endpoint
+genuinely `404`ing afterward; and a real REST error's shape is
+byte-for-byte identical to before this change — proof the fix is
+additive, not a rewrite that happened to also work. `npm test`
+(28/4), `npm run test:e2e` (1/1), and `npx eslint src/ test/` all
+still clean.
