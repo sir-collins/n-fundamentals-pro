@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { Args, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
@@ -9,13 +10,14 @@ import { Song } from './entities/song.entity';
 /**
  * GraphQL layer for `songs` — a second API surface over the exact same
  * `SongsService` the REST `SongsController` already uses, no business
- * logic duplicated here.
+ * logic duplicated here. `NotFoundException` thrown below is formatted
+ * for GraphQL by `HttpExceptionFilter` (same class, same messages as
+ * `SongsController`'s REST equivalents) rather than a REST-style thrown
+ * response object.
  *
- * Deliberately simpler than the REST controller for now: mutations are
- * unguarded (GraphQL auth is its own later roadmap step — "re-implement
- * auth"), and "not found" resolves to `null` (GraphQL's own idiom for a
- * missing single-item result) rather than a REST-style thrown 404 —
- * proper GraphQL error handling is also its own later step.
+ * Deliberately simpler than the REST controller in one remaining way:
+ * mutations are unguarded (GraphQL auth is its own later roadmap step —
+ * "re-implement auth").
  */
 @Resolver(() => Song)
 export class SongsResolver {
@@ -26,9 +28,16 @@ export class SongsResolver {
     return this.songsService.findAll(pagination);
   }
 
-  @Query(() => Song, { nullable: true })
-  song(@Args('id', { type: () => Int }) id: number): Promise<Song | null> {
-    return this.songsService.findOne(id);
+  /** @throws NotFoundException if no song exists with `id`. */
+  @Query(() => Song)
+  async song(@Args('id', { type: () => Int }) id: number): Promise<Song> {
+    const song = await this.songsService.findOne(id);
+
+    if (!song) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
+    }
+
+    return song;
   }
 
   @Mutation(() => Song)
@@ -36,16 +45,32 @@ export class SongsResolver {
     return this.songsService.create(input);
   }
 
-  @Mutation(() => Song, { nullable: true })
-  updateSong(
+  /** @throws NotFoundException if no song exists with `id`. */
+  @Mutation(() => Song)
+  async updateSong(
     @Args('id', { type: () => Int }) id: number,
     @Args('input') input: UpdateSongInput,
-  ): Promise<Song | null> {
-    return this.songsService.update(id, input);
+  ): Promise<Song> {
+    const song = await this.songsService.update(id, input);
+
+    if (!song) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
+    }
+
+    return song;
   }
 
+  /** @throws NotFoundException if no song exists with `id`. */
   @Mutation(() => Boolean)
-  deleteSong(@Args('id', { type: () => Int }) id: number): Promise<boolean> {
-    return this.songsService.remove(id);
+  async deleteSong(
+    @Args('id', { type: () => Int }) id: number,
+  ): Promise<boolean> {
+    const removed = await this.songsService.remove(id);
+
+    if (!removed) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
+    }
+
+    return true;
   }
 }

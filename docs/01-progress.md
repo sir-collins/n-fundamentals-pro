@@ -640,6 +640,54 @@ Completes all three roadmap bullets for Project 7.
       real `404` afterward); `song(id: 99999)` returned a clean
       `null`, no crash. `npm test` (28/4), `npm run test:e2e` (1/1),
       and `npx eslint src/ test/` all confirmed unaffected.
+- [x] Error handling in GraphQL — testing the GraphQL layer directly
+      (rather than assuming defaults were fine) found a real,
+      currently-live bug: any `HttpException` thrown inside a
+      resolver — including every `class-validator` failure on
+      `createSong`'s input — crashed with `response.status is not a
+      function` and leaked a full internal stack trace, because the
+      REST-only `HttpExceptionFilter` (globally registered) assumed a
+      real Express `Response` that doesn't exist in a GraphQL
+      execution context. Root-caused by reading `@nestjs/core`'s own
+      exception-handling source (`external-exceptions-handler.js`,
+      `base-exception-filter-context.js`, `context-creator.js`), not
+      guessed: Nest resolves `@Catch()` filters via `Array.find()`
+      over `[...method, ...class, ...global]` (global filters checked
+      *last*) — meaning two competing globally-registered filters
+      both `@Catch(HttpException)` would create real ambiguity over
+      which one wins. Fixed with **one filter, context-aware**
+      (`host.getType<GqlContextType>()`, exact string confirmed from
+      `@nestjs/graphql`'s own types) rather than a second competing
+      global filter — the REST branch is byte-for-byte unchanged, a
+      new branch returns a `GraphQLError` instead of touching a
+      response object. Closed out step 1's deferred decision at the
+      same time: `song`/`updateSong`/`deleteSong` now throw a real
+      `NotFoundException` (same messages as `SongsController`'s REST
+      equivalents) instead of returning `null`/`false` — full parity
+      with REST, and `schema.gql` correctly shows `Song!` instead of
+      `Song` for the two queries that can no longer legitimately
+      return nothing.
+
+      Verified precisely, including a claim that turned out to
+      already be true rather than assumed: after the fix, a
+      dev-mode error response still showed a `stacktrace` in
+      `extensions` — checked whether that was a new leak from this
+      change before declaring victory, and confirmed via a real
+      `npm run build` + `start:prod` run that it's Apollo Server's own
+      standard dev-only convenience (`NODE_ENV`-gated), completely
+      absent in production — not something this filter needs to
+      suppress itself. Re-ran the exact original bug repro (invalid
+      `releaseDate`) and confirmed a real validation message now comes
+      through (`"releaseDate must be a valid ISO 8601 date string"`,
+      `extensions.code: "BadRequestException"`) instead of a crash;
+      confirmed all three not-found cases now throw properly
+      (`NotFoundException`/`404`, correct message, correct `path`);
+      re-ran the full create/update/delete happy path via GraphQL,
+      cross-checked against REST at every step (including the deleted
+      song's REST endpoint genuinely `404`ing afterward); confirmed a
+      real REST error's shape (`{ statusCode, timestamp, path,
+      message }`) is byte-for-byte unchanged. `npm test` (28/4), `npm
+      run test:e2e` (1/1), and `npx eslint src/ test/` all still clean.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 

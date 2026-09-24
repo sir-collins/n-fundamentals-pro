@@ -17,7 +17,7 @@ input CreateSongDto {
 type Mutation {
   createSong(input: CreateSongDto!): Song!
   deleteSong(id: Int!): Boolean!
-  updateSong(id: Int!, input: UpdateSongInput!): Song
+  updateSong(id: Int!, input: UpdateSongInput!): Song!
 }
 
 type PaginatedSongs {
@@ -26,7 +26,7 @@ type PaginatedSongs {
 }
 
 type Query {
-  song(id: Int!): Song
+  song(id: Int!): Song!
   songs(limit: Int = 10, page: Int = 1): PaginatedSongs!
 }
 
