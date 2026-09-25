@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AuthResolver } from './auth.resolver';
 import { ApiKeysService } from './api-keys.service';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -29,6 +30,12 @@ import { ApiKey } from './entities/api-key.entity';
     TypeOrmModule.forFeature([ApiKey]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, JwtStrategy, ApiKeysService],
+  providers: [
+    AuthService,
+    AuthResolver,
+    LocalStrategy,
+    JwtStrategy,
+    ApiKeysService,
+  ],
 })
 export class AuthModule {}

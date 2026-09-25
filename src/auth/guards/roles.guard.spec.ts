@@ -8,13 +8,15 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserRole } from '../../users/entities/user.entity';
 
 // A hand-built partial ExecutionContext, cast through `unknown` — the
-// guard only touches getHandler/getClass/switchToHttp().getRequest(),
+// guard only touches getHandler/getClass/getType/switchToHttp().getRequest(),
 // so a full createMock<ExecutionContext>() would just obscure which
-// three methods actually matter here.
+// methods actually matter here. `getType` returns 'http' since these tests
+// exercise the REST branch of the guard's context-aware request lookup.
 function buildContext(user?: { role: UserRole }): ExecutionContext {
   return {
     getHandler: () => undefined,
     getClass: () => undefined,
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => ({ user }) }),
   } as unknown as ExecutionContext;
 }

@@ -26,8 +26,9 @@ each piece was built the way it was — start at
 - **WebSockets** (`@nestjs/websockets` + Socket.IO) for live comment
   notifications — see [`public/realtime-comments.html`](./public/realtime-comments.html)
 - **GraphQL** (`@nestjs/graphql` + Apollo) at `/graphql` — a parallel,
-  code-first API over the same `songs` domain/services as the REST
-  routes; schema at [`schema.gql`](./schema.gql)
+  code-first API over the same `songs`/`auth` domain/services as the
+  REST routes, including signup/login/profile and JWT+role-guarded
+  song mutations; schema at [`schema.gql`](./schema.gql)
 
 ## Getting started
 
@@ -125,9 +126,10 @@ for the rest of the app (auth's other services, comments) — a scope
 decision, not an oversight. **Project 7: Real-Time Layer** is complete
 — live comment notifications over WebSockets (see the Stack section
 above) and `start:swc` (see "Getting started" above). Now on
-**Project 8: GraphQL API** — a parallel `/graphql` API over `songs` is
-done (see the Stack section above); auth, subscriptions, error
-handling, testing, caching, and an external-API-calling resolver are
-later sub-steps. See
+**Project 8: GraphQL API** — a parallel `/graphql` API over `songs` and
+`auth` is done, including GraphQL-specific error handling and
+JWT/role-guarded mutations reusing the same auth system as REST (see
+the Stack section above); subscriptions, resolver testing, caching,
+and an external-API-calling resolver are later sub-steps. See
 [`docs/01-progress.md`](./docs/01-progress.md) for the live checklist
 across every project in the roadmap.
