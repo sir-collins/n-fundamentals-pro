@@ -14,9 +14,22 @@ input CreateSongDto {
   title: String!
 }
 
+input LoginDto {
+  email: String!
+  password: String!
+}
+
+type LoginResult {
+  accessToken: String
+  tempToken: String
+  twoFactorRequired: Boolean
+}
+
 type Mutation {
   createSong(input: CreateSongDto!): Song!
   deleteSong(id: Int!): Boolean!
+  login(input: LoginDto!): LoginResult!
+  signup(input: SignupDto!): SignupResult!
   updateSong(id: Int!, input: UpdateSongInput!): Song!
 }
 
@@ -26,8 +39,19 @@ type PaginatedSongs {
 }
 
 type Query {
+  profile: User!
   song(id: Int!): Song!
   songs(limit: Int = 10, page: Int = 1): PaginatedSongs!
+}
+
+input SignupDto {
+  email: String!
+  password: String!
+}
+
+type SignupResult {
+  email: String!
+  id: Int!
 }
 
 type Song {
@@ -43,4 +67,15 @@ input UpdateSongInput {
   duration: String
   releaseDate: String
   title: String
+}
+
+type User {
+  email: String!
+  id: Int!
+  role: UserRole!
+}
+
+enum UserRole {
+  ADMIN
+  USER
 }

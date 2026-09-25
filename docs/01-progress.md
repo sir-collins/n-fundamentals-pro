@@ -688,6 +688,98 @@ Completes all three roadmap bullets for Project 7.
       real REST error's shape (`{ statusCode, timestamp, path,
       message }`) is byte-for-byte unchanged. `npm test` (28/4), `npm
       run test:e2e` (1/1), and `npx eslint src/ test/` all still clean.
+- [x] Re-implement your auth (signup/login) as GraphQL schema +
+      resolvers, guarded — third Project 8 sub-step, scoped tightly to
+      exactly what the roadmap names (signup, login, guarding); 2FA and
+      API keys deliberately stay REST-only. Also finally closes the gap
+      steps 1 and 2 both left open: `createSong`/`updateSong`/
+      `deleteSong` had zero auth on them since step 1.
+
+      `User` (`src/users/entities/user.entity.ts`) got its first
+      GraphQL decorators — `@ObjectType()`, `@Field()` on `id`/`email`/
+      `role` only (`registerEnumType` added for `UserRole` to expose
+      it as a real GraphQL enum). `password`/`twoFactorSecret`/
+      `isTwoFactorEnabled` are deliberately left undecorated — a real,
+      structural difference from REST: an undecorated field has no
+      presence in the generated schema at all, not just "we remembered
+      to omit it this time." `LoginDto`/`SignupDto` gained
+      `@InputType()`/`@Field()` alongside their existing Swagger/
+      class-validator decorators; `LoginDto` specifically went from
+      doc-only (Passport's `LocalStrategy` validates REST logins
+      itself, bypassing it) to genuinely enforced for GraphQL, since
+      nothing else validates a GraphQL login attempt. New
+      `LoginResult` type (`src/auth/dto/login-result.type.ts`) models
+      `login`'s two-shape REST return (`{ access_token }` vs.
+      `{ twoFactorRequired, tempToken }`) as **one type with both
+      pairs of fields nullable** — a deliberate choice over a real
+      GraphQL union, decided in conversation, simpler and fully usable
+      for both flows.
+
+      New `GqlAuthGuard` (`src/auth/guards/gql-auth.guard.ts`) extends
+      `AuthGuard('jwt')`, overriding just `getRequest()` to pull the
+      real request via `GqlExecutionContext` — the officially-supported
+      Passport extension point, reusing `JwtStrategy` completely
+      unchanged (a bearer token looks identical to Express regardless
+      of transport). New `AuthResolver`
+      (`src/auth/auth.resolver.ts`): `signup` and `login` reuse
+      `AuthService` directly, with `login` calling
+      `authService.validateUser()` directly rather than forcing
+      `AuthGuard('local')` through GraphQL (Passport's local strategy
+      reads credentials off the request *body* by convention, which
+      doesn't map onto GraphQL args) — manually replicating
+      `LocalStrategy.validate`'s exact `UnauthorizedException`-on-null
+      behavior; `profile` is guarded by `GqlAuthGuard` and reads
+      `context.req.user` directly via the plain `@Context()` decorator
+      (a `@CurrentUser()` custom decorator was deliberately **not**
+      built — it's a named Project 10 capstone item, same discipline
+      already applied to deferring `@nestjs/event-emitter` in the
+      WebSocket step). `SongsResolver`'s three mutations gained
+      `@UseGuards(GqlAuthGuard, RolesGuard)` + `@Roles(UserRole.ADMIN)`
+      — same guard pairing/order as `SongsController`'s REST
+      equivalents.
+
+      Two real bugs found by actually testing, not assumed correct
+      from the plan: (1) `signup` was declared `@Mutation(() => User)`
+      but `AuthService.signup()` only ever returns `{ id, email }` —
+      since `User.role` is a non-nullable `@Field()`, querying `role`
+      alongside `id`/`email` threw `Cannot return null for
+      non-nullable field User.role`. Fixed with a dedicated
+      `SignupResult` type (`id`/`email` only, matching the real
+      guaranteed shape) instead of overloading `User`. (2)
+      `RolesGuard.canActivate` used `context.switchToHttp()
+      .getRequest()` — the exact same broken assumption
+      `HttpExceptionFilter` had before being fixed in the previous
+      step. Confirmed by actually hitting it (a non-admin token on
+      `createSong` crashed with `Cannot read properties of undefined
+      (reading 'user')`), then fixed the same way as that prior bug:
+      one context-aware guard (branching on
+      `context.getType<GqlContextType>() === 'graphql'`), not a second
+      competing guard class — same reasoning about Nest's
+      `Array.find()`-based guard/filter resolution creating real
+      ambiguity between two same-type global registrations.
+
+      Verified end to end against the real running app: real `signup`
+      → real `login` for a non-2FA user returned a genuine
+      `accessToken` with `twoFactorRequired`/`tempToken` null; a real
+      2FA-enabled account's `login` returned `twoFactorRequired: true`
+      + a real `tempToken` with `accessToken` null, confirming
+      `LoginResult`'s dual-shape modeling actually works for both
+      flows; `profile` returned the right user with a valid token and
+      a proper guarded error with none; `createSong`/`updateSong`/
+      `deleteSong` all confirmed working through the full guard chain
+      with the real bugs above fixed — no token guarded-errors, a
+      non-admin token `403`s cleanly (not a crash), and a real admin
+      token succeeds, cross-checked against the existing REST
+      endpoints at every step (including the deleted song's REST
+      endpoint genuinely `404`ing afterward) — proof both API layers
+      still share the same underlying data. Inspected the generated
+      `schema.gql` directly and confirmed `User`'s structural
+      field-hiding: `type User { email: String!, id: Int!, role:
+      UserRole! }`, no password/2FA fields present at all. Fixing
+      `RolesGuard` broke its own existing unit tests (their hand-built
+      `ExecutionContext` mock had no `getType()`) — updated the mock
+      rather than the guard. `npm test` (28/4), `npm run test:e2e`
+      (1/1), and `npx eslint src/` all still clean.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 

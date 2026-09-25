@@ -5,16 +5,26 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { GqlContextType, GqlExecutionContext } from '@nestjs/graphql';
 import { Request } from 'express';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserRole } from '../../users/entities/user.entity';
 
 /**
- * Authorization, not authentication — pair this with `AuthGuard('jwt')`
- * (which must run first, so `req.user` is already populated) rather than
- * using it alone. A route with no `@Roles(...)` metadata isn't restricted
- * by this guard at all; one that is, but whose caller's role isn't in the
- * list, gets a `403` — the caller is known, just not allowed.
+ * Authorization, not authentication — pair this with `AuthGuard('jwt')`/
+ * `GqlAuthGuard` (which must run first, so `req.user` is already
+ * populated) rather than using it alone. A route with no `@Roles(...)`
+ * metadata isn't restricted by this guard at all; one that is, but whose
+ * caller's role isn't in the list, gets a `403` — the caller is known,
+ * just not allowed.
+ *
+ * Works across both transports this app exposes. `context.switchToHttp()
+ * .getRequest()` — correct for REST — returns `undefined` in a GraphQL
+ * execution context (confirmed by actually hitting it, not assumed: a
+ * real `TypeError: Cannot read properties of undefined (reading 'user')`
+ * before this branch existed), so the request is located differently
+ * depending on `context.getType()` — same context-aware-single-class
+ * pattern as `HttpExceptionFilter`, not a second competing guard.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -30,9 +40,14 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<Request & { user?: { role: UserRole } }>();
+    const request =
+      context.getType<GqlContextType>() === 'graphql'
+        ? GqlExecutionContext.create(context).getContext<{
+            req: Request & { user?: { role: UserRole } };
+          }>().req
+        : context
+            .switchToHttp()
+            .getRequest<Request & { user?: { role: UserRole } }>();
 
     if (!request.user || !requiredRoles.includes(request.user.role)) {
       throw new ForbiddenException('Insufficient role for this action');
