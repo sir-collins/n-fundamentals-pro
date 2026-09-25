@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { PubSub } from 'graphql-subscriptions';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CommentsGateway } from './comments.gateway';
+import { PUB_SUB } from './pub-sub.provider';
 
 /**
  * Backed by MongoDB via Mongoose. Follows `SongsService`'s division of
@@ -17,12 +19,15 @@ export class CommentsService {
     @InjectModel(Comment.name)
     private readonly commentModel: Model<CommentDocument>,
     private readonly commentsGateway: CommentsGateway,
+    @Inject(PUB_SUB) private readonly pubSub: PubSub,
   ) {}
 
   /**
    * Create a comment on `songId`, authored by the caller. Broadcasts it
    * to everyone currently subscribed to that song's WebSocket room
-   * (`CommentsGateway`) before returning.
+   * (`CommentsGateway`) and to any GraphQL `commentAdded` subscribers
+   * (`CommentsResolver`) before returning — two independent real-time
+   * mechanisms over the same event, neither replacing the other.
    * @throws BadRequestException if `parentCommentId` doesn't exist, or
    *   belongs to a different song — a reply must live on the same song
    *   as the comment it replies to.
@@ -55,6 +60,7 @@ export class CommentsService {
       parentComment,
     });
     this.commentsGateway.broadcastNewComment(songId, comment);
+    await this.pubSub.publish('commentAdded', { commentAdded: comment });
     return comment;
   }
 

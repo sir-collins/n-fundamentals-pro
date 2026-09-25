@@ -72,6 +72,11 @@ import { envValidationSchema } from './config/env.validation';
       driver: ApolloDriver,
       autoSchemaFile: join(process.cwd(), 'schema.gql'),
       sortSchema: true,
+      // Enables the `graphql-ws` protocol so `@Subscription()` resolvers
+      // (CommentsResolver) work — the transport package itself
+      // (graphql-ws) is already a dependency of @nestjs/graphql, not
+      // something this project had to add.
+      subscriptions: { 'graphql-ws': true },
     }),
     SongsModule,
     AuthModule,

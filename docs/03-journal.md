@@ -1824,3 +1824,153 @@ every step, including the deleted song's REST endpoint genuinely
 check run at every prior GraphQL sub-step. `npm test` (28/4), `npm run
 test:e2e` (1/1), and `npx eslint src/` all clean after updating the
 one test fixture Bug 2's fix touched.
+
+## 2026-09-25 — Real-time Subscriptions, and an ObjectId question worth actually checking
+
+Fourth Project 8 sub-step. The roadmap bullet names itself — "GraphQL's
+version of WebSockets" — so there was no real ambiguity about the
+feature: mirror Project 7's live comment notifications as a real
+GraphQL subscription, additive alongside the existing
+`CommentsGateway`, not a replacement for it. Scoped narrowly on
+purpose, same restraint as the auth step: subscription only, no
+GraphQL queries or mutations for comments. Comments still only get
+created through the existing REST endpoint; the subscription fires
+regardless of which layer triggered it, since publishing happens once,
+inside `CommentsService`, not duplicated per API surface.
+
+The dependency check turned up something worth being precise about,
+since this project has a running habit of getting burned by
+`latest`-vs-pinned mismatches: the *transport* for GraphQL
+subscriptions (`graphql-ws`) needed no new install at all — it's
+already one of `@nestjs/graphql`'s own dependencies, sitting in
+`node_modules` before this step touched anything. What was actually
+missing was `graphql-subscriptions`, the package providing the
+`PubSub` class used to publish/subscribe to events. Rather than trust
+possibly-stale blog-post-era API names (`asyncIterator` shows up in a
+lot of older GraphQL subscription tutorials), read the real installed
+package's own `.d.ts` files directly: the current API is
+`asyncIterableIterator<T>(triggers)`, inherited from `PubSubEngine` —
+`asyncIterator` is the deprecated predecessor. Went one step further
+and read `@nestjs/apollo`'s own bundled test fixture for subscriptions
+(it ships one, under `node_modules/@nestjs/apollo/dist/tests/tests/
+subscriptions/`) — since that's the literal installed version running
+in this app, its pattern is proven correct for this codebase
+specifically, not just "the docs say this should work." That's where
+the `subscriptions: { 'graphql-ws': true }` config shape and the
+`@Subscription(() => Type, { filter(payload, variables, context) {...}
+})` signature both came from directly, not from memory or a guess.
+
+`PubSub` needed to be shared between `CommentsService` (which
+publishes) and the new `CommentsResolver` (which subscribes), which
+raised a small but real DI question: why not just list the `PubSub`
+class directly in `providers` and let Nest construct it? Because its
+constructor takes an optional, *interface*-typed parameter
+(`PubSubOptions`) — TypeScript interfaces don't exist at runtime, so
+`design:paramtypes` reflection would see that parameter as a bare
+`Object`, an unregistered token, and Nest's DI would fail trying to
+resolve it (TS's `?` on a constructor param doesn't make it
+DI-optional the way `@Optional()` does). A `useValue` provider
+(`pub-sub.provider.ts`, constructing `new PubSub()` manually) sidesteps
+the whole question by never asking Nest to call that constructor
+itself.
+
+The one genuinely open item going in — flagged as such in the plan,
+not assumed either way — was whether a raw Mongoose `ObjectId` (used
+for `Comment.id` and `.parentComment`) would serialize cleanly through
+GraphQL's `ID` scalar with zero extra mapping code, given that this
+project has never put a Mongoose-backed type on the GraphQL side
+before. It does, and understanding *why* mattered more than just
+seeing it work: BSON's `ObjectId` class implements `toJSON()`,
+returning its hex string, and `graphql-js`'s own `ID` serializer falls
+back to an object's `toJSON()` when the value isn't already a
+string/number. Confirmed for real rather than left as "should work
+based on reading the source": a small `graphql-ws` client script
+(Apollo Sandbox's browser subscription UI wasn't practical to drive in
+this terminal-only environment, but a scripted `graphql-ws` connection
+exercises the exact same wire protocol, so it's an equally real check,
+not a lesser one) subscribed to `commentAdded(songId: 3)`, and a
+comment posted through the *existing, unchanged* REST endpoint arrived
+live with a genuine hex-string `id` — no `[object Object]`, no crash.
+Posting a reply (`parentCommentId` set) confirmed the same thing holds
+for `parentComment` too.
+
+The `filter` option on `@Subscription()` is the direct GraphQL-native
+counterpart to the WS gateway's per-song Socket.IO room — same
+property, different mechanism. Verified it the same way Project 7's
+room isolation was verified: a second subscriber on song 4 while the
+comment posted on song 3, and it received nothing at all, not a
+filtered-out empty event — genuinely never delivered.
+
+Last check, and the one that actually matters most for calling this
+"additive" rather than just claiming it: confirmed `CommentsGateway`'s
+Socket.IO broadcast still fires, completely unchanged, for the exact
+same comment-creation event the new subscription now also observes —
+a small `socket.io-client` script subscribed to the WS room and
+received the same comment. Two independent real-time mechanisms over
+one event, neither one aware of the other, both correct. `npm test`
+(28/4), `npm run test:e2e` (1/1), and `npx eslint src/` all clean — one
+inline `eslint-disable` needed for the subscription resolver's
+`songId` parameter, which only exists to make `@Args()` generate the
+schema argument (the actual filtering logic reads `variables.songId`
+instead) — the same shape Nest's own official subscription example
+has, just flagged here because this project lints its TypeScript
+source directly rather than a compiled JS example.
+
+## 2026-09-25 — A manual-testing dead end, and why a demo page fixed it
+
+Trying to manually verify the subscription above through Apollo
+Sandbox's UI hit a real wall: `Could not connect to websocket endpoint
+ws://localhost:3000/graphql`. Worth being precise about the cause
+before reaching for a workaround, since it's a genuinely different
+problem than anything this project had run into before — not a bug in
+the app at all. Confirmed that directly: the exact same `graphql-ws`
+client script used to verify the subscription earlier connected to
+that exact URL without any trouble, run again fresh, right after
+Sandbox failed. The actual cause is a browser security behavior, not a
+server one — Apollo Sandbox is served from `https://
+studio.apollographql.com` (embedded in an iframe even when opened from
+a local `/graphql` page), and browsers restrict a secure page from
+opening a plain, unencrypted `ws://` connection ("mixed content").
+Some browsers exempt `localhost` from this reliably, some don't,
+especially for a WebSocket upgrade specifically rather than a plain
+fetch.
+
+Tried Altair GraphQL Client next — a real desktop app, not a hosted
+https page, so the mixed-content problem shouldn't apply at all. It
+connected once, then failed to reconnect on every subsequent attempt.
+Didn't chase down Altair's own internals to explain that — diminishing
+returns for a third-party tool's bug, not this project's — but the
+pattern (works once, then consistently fails) pointed at the same
+underlying lesson either way: external GraphQL clients each carry
+their own assumptions about subscription protocol handling and
+connection lifecycle, and this project has no control over any of it.
+
+The fix followed the exact precedent already sitting in this
+repo: Project 7 already solved "how do you manually demo a real-time
+feature" with `public/realtime-comments.html` — a small page served by
+this same app, same origin as the thing it connects to, using the
+real client library via CDN rather than a general-purpose GraphQL
+tool. New `public/graphql-comment-subscriptions.html` does the exact
+same thing for the GraphQL side: same-origin serving means the
+mixed-content problem literally cannot occur (no `https://` origin
+involved at all), and using `graphql-ws`'s own official browser bundle
+(the UMD build, confirmed by reading it directly — it exposes
+`window.graphqlWs.createClient`, not something guessed from a
+possibly-stale example) means there's no third-party client's protocol
+assumptions to fight. This wasn't a named roadmap deliverable the way
+Project 7's frontend page was, but it directly resolved a real
+problem hit while trying to verify this exact sub-step's own actual
+deliverable — proportionate, not scope creep for its own sake.
+
+Honestly reported to the user: no browser automation tool was
+available in this environment to click through the new page myself,
+and installing one just for a one-off check of a static demo page
+would have been disproportionate. What *was* verified directly: the
+page is served correctly (`200` from the app), and the same
+`createClient`/`subscribe` calls the page's script makes were already
+proven working moments earlier via the standalone `graphql-ws` script
+used to verify the subscription itself — the page is a thin UI wrapper
+around already-verified mechanics, not new, unverified logic. Asked
+the user to confirm the actual click-through experience themselves,
+rather than claiming full end-to-end success on code that was never
+actually driven through a real browser in this session.
