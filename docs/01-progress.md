@@ -780,6 +780,81 @@ Completes all three roadmap bullets for Project 7.
       `ExecutionContext` mock had no `getType()`) — updated the mock
       rather than the guard. `npm test` (28/4), `npm run test:e2e`
       (1/1), and `npx eslint src/` all still clean.
+- [x] Real-time Subscriptions (GraphQL's version of WebSockets) —
+      fourth Project 8 sub-step. Mirrors Project 7's WebSocket
+      deliverable (live comment notifications on songs) as a real
+      GraphQL subscription, additive alongside `CommentsGateway`, not
+      replacing it. Deliberately **subscription-only** — no GraphQL
+      queries/mutations for comments; creation still only happens via
+      the existing REST endpoint, and the subscription fires
+      regardless of which API layer triggered it, since publishing
+      happens once in `CommentsService`. No guard on the subscription,
+      matching existing precedent (`subscribeToSong`/`GET
+      .../comments` are both public too).
+
+      Added `graphql-subscriptions` (checked peer deps first, same
+      habit as every dependency here: `graphql: ^15.7.2 || ^16.0.0`,
+      compatible) — the transport itself (`graphql-ws`) needed no new
+      package, already a dependency of `@nestjs/graphql`. `app.module.ts`
+      gained `subscriptions: { 'graphql-ws': true }` on the existing
+      `GraphQLModule.forRoot(...)` call. `Comment`
+      (`src/comments/schemas/comment.schema.ts`) got its first GraphQL
+      decorators — `@ObjectType()`/`@Field()`, including a plain
+      (non-`@Prop()`) `id` field backed by Mongoose's automatic `id`
+      virtual getter, and `parentComment` exposed as a bare nullable
+      `ID` rather than a populated object (a live notification doesn't
+      need the parent's full body/author expanded). New
+      `pub-sub.provider.ts` provides a single shared `PubSub` instance
+      via a `useValue` provider (not `PubSub` listed directly — its
+      constructor takes an interface-typed optional param Nest's
+      reflection-based DI can't resolve on its own). New
+      `CommentsResolver`: one `commentAdded(songId)` subscription,
+      using `@Subscription()`'s built-in `filter` option as the
+      GraphQL-native equivalent of the WS gateway's per-song Socket.IO
+      room isolation. `CommentsService.create()` now publishes to this
+      `PubSub` right alongside its existing, unchanged
+      `commentsGateway.broadcastNewComment(...)` call.
+
+      One genuinely open question going in, resolved by testing rather
+      than assumed: whether a raw Mongoose `ObjectId` (for `id`/
+      `parentComment`) would serialize correctly through GraphQL's
+      `ID` scalar with zero extra mapping code. It does — BSON's
+      `ObjectId` has a `toJSON()` returning its hex string, which
+      `graphql-js`'s `ID` serializer falls back to. Verified against
+      the real running app using a small `graphql-ws` client script
+      (Apollo Sandbox's browser UI wasn't practical in this
+      environment; a scripted `graphql-ws` connection exercises the
+      exact same protocol): a comment posted via the existing REST
+      endpoint was received live by a `commentAdded(songId: 3)`
+      subscriber, with `id` a real hex string; a second subscriber on
+      a *different* song id received nothing when that comment posted
+      — confirming room isolation; a reply (`parentCommentId` set)
+      confirmed `parentComment` also serializes as a real hex string,
+      not `[object Object]` or an error — resolving the open question
+      for real. Separately confirmed `CommentsGateway`'s Socket.IO
+      broadcast still fires unchanged for the same event, proving this
+      is additive, not a replacement. `npm test` (28/4), `npm run
+      test:e2e` (1/1), and `npx eslint src/` all still clean. No new
+      resolver spec written — "Unit + E2E testing for resolvers" is
+      this branch's own later, separate sub-step; `SongsResolver`/
+      `AuthResolver` have none yet either, same sequencing.
+
+      **Added after initial verification**: manual testing revealed a
+      real, practical gap — the hosted Apollo Sandbox (served over
+      `https://`) can't open a plain `ws://localhost:3000` connection
+      due to browser mixed-content blocking, and a third-party desktop
+      client (Altair) connected once but not reliably on retries. New
+      `public/graphql-comment-subscriptions.html`, mirroring Project
+      7's `realtime-comments.html` demo exactly — served same-origin
+      by this same app (no mixed-content issue possible), using
+      `graphql-ws`'s own browser client (CDN, pinned to the installed
+      `6.2.1`) rather than a third-party tool with its own protocol
+      quirks. Cross-linked with the existing WS demo page. Not a named
+      roadmap deliverable for this sub-step (unlike Project 7, which
+      explicitly named a frontend page), but small and directly solves
+      a real reliability problem encountered while verifying this
+      exact step, the same way ad hoc verification tooling gets built
+      elsewhere in this project.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 

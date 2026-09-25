@@ -7,6 +7,15 @@ type Artist {
   name: String!
 }
 
+type Comment {
+  authorEmail: String!
+  authorId: Int!
+  body: String!
+  id: ID!
+  parentComment: ID
+  songId: Int!
+}
+
 input CreateSongDto {
   artists: [String!]!
   duration: String!
@@ -60,6 +69,10 @@ type Song {
   id: Int!
   releaseDate: String!
   title: String!
+}
+
+type Subscription {
+  commentAdded(songId: Int!): Comment!
 }
 
 input UpdateSongInput {

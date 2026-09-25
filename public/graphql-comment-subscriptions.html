@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Live Song Comments — GraphQL Subscription</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  #status { font-weight: bold; }
+  #status.connected { color: #1a7f37; }
+  #status.disconnected { color: #b91c1c; }
+  #comments { list-style: none; padding: 0; }
+  #comments li { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; }
+  .meta { color: #666; font-size: 0.85rem; }
+  input, button { font-size: 1rem; padding: 0.4rem; }
+</style>
+</head>
+<body>
+<h1>Live Song Comments — GraphQL Subscription</h1>
+<p>
+  A demo of <code>CommentsResolver</code>'s <code>commentAdded</code>
+  subscription (Project 8 — GraphQL's version of WebSockets): the GraphQL
+  counterpart to <a href="/realtime-comments.html">realtime-comments.html</a>'s
+  Socket.IO demo, over the same underlying event. Enter a real song id,
+  subscribe, then post a comment on that song from another window (Swagger
+  UI at <a href="/api">/api</a>, or <code>rest-client.http</code>) — comments
+  are still only ever created via REST, not GraphQL, so this page only
+  listens.
+</p>
+<p>
+  Served from this same app, same origin as the <code>ws://.../graphql</code>
+  endpoint it connects to — deliberately, since testing this against the
+  hosted Apollo Sandbox (served over <code>https://</code>) runs into browser
+  mixed-content blocking on the plain <code>ws://</code> connection a local
+  dev server exposes.
+</p>
+
+<p id="status" class="disconnected">disconnected</p>
+
+<input id="songId" type="number" placeholder="Song id" />
+<button id="subscribeBtn">Subscribe</button>
+
+<ul id="comments"></ul>
+
+<script src="https://cdn.jsdelivr.net/npm/graphql-ws@6.2.1/umd/graphql-ws.min.js"></script>
+<script>
+  const statusEl = document.getElementById('status');
+  const commentsEl = document.getElementById('comments');
+  const songIdInput = document.getElementById('songId');
+  const subscribeBtn = document.getElementById('subscribeBtn');
+
+  // Same origin as the page itself, same reasoning as socket.io's implicit
+  // same-origin connection in realtime-comments.html — no CORS config
+  // needed either.
+  const client = graphqlWs.createClient({
+    url: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/graphql',
+    on: {
+      connected: () => { statusEl.textContent = 'connected'; statusEl.className = 'connected'; },
+      closed: () => { statusEl.textContent = 'disconnected'; statusEl.className = 'disconnected'; },
+    },
+  });
+
+  let unsubscribe = null;
+
+  subscribeBtn.addEventListener('click', () => {
+    const songId = Number(songIdInput.value);
+    if (!songId) return;
+
+    if (unsubscribe) unsubscribe();
+    commentsEl.innerHTML = '';
+    const waitingLi = document.createElement('li');
+    waitingLi.textContent = 'Subscribed to song ' + songId + ' — waiting for new comments...';
+    commentsEl.appendChild(waitingLi);
+
+    unsubscribe = client.subscribe(
+      {
+        query: `subscription($songId: Int!) {
+          commentAdded(songId: $songId) {
+            id
+            body
+            authorEmail
+            parentComment
+          }
+        }`,
+        variables: { songId },
+      },
+      {
+        next: ({ data }) => {
+          const comment = data.commentAdded;
+          const li = document.createElement('li');
+          li.innerHTML =
+            '<div>' + comment.body.replace(/</g, '&lt;') + '</div>' +
+            '<div class="meta">' + comment.authorEmail +
+            (comment.parentComment ? ' (reply)' : '') + '</div>';
+          commentsEl.prepend(li);
+        },
+        error: (err) => console.error('Subscription error:', err),
+        complete: () => {},
+      },
+    );
+  });
+</script>
+</body>
+</html>
