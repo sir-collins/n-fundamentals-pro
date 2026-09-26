@@ -157,7 +157,7 @@ access — each mechanism verified end to end with real HTTP calls, real
 crypto, and (where relevant) a deliberately demonstrated attack proven
 closed rather than just asserted to be.
 
-## Project 4: Production-Grade Setup — 🚧 In progress
+## Project 4: Production-Grade Setup — ✅ Done
 
 - [x] Custom configuration + validated environment variables —
       `@nestjs/config` (pinned `^4.0.4` — its latest major, `12.x`, is
@@ -300,7 +300,7 @@ closed rather than just asserted to be.
       matching what the generated docs describe. `npx eslint .` and
       `npx jest` both clean.
 
-## Project 5: Add MongoDB Alongside SQL — 🚧 In progress
+## Project 5: Add MongoDB Alongside SQL — ✅ Done
 
 - [x] Run MongoDB via Docker Compose — new `mongo` service in
       `docker-compose.yml` (official `mongo:7` image, own named volume),
@@ -855,6 +855,26 @@ Completes all three roadmap bullets for Project 7.
       a real reliability problem encountered while verifying this
       exact step, the same way ad hoc verification tooling gets built
       elsewhere in this project.
+
+- [ ] Unit + E2E testing for resolvers — **first sub-step done**: new
+      `songs.resolver.spec.ts` (8 tests) and `auth.resolver.spec.ts`
+      (6 tests), same `TestingModule` + `createMock<T>()` pattern as
+      Project 6's `SongsController` spec. Resolver methods are called
+      directly, so guards, arg coercion, validation and GraphQL error
+      formatting are deliberately *not* exercised here. That's the
+      later GraphQL E2E sub-step's job. Covers each resolver's own
+      logic: `SongsResolver`'s `null`/`false` → `NotFoundException` on
+      `song`/`updateSong`/`deleteSong`, plus pass-through of args to
+      `SongsService`; `AuthResolver.login`'s bad-credentials path
+      (throws `UnauthorizedException` *and* never calls
+      `authService.login`), its `access_token` → `accessToken` key
+      mapping, and the 2FA challenge passing through without an
+      `accessToken`. Same sanity check as before: broke one assertion
+      in each new spec, confirmed both failed, reverted. `npm test` now
+      runs 42 tests across 6 suites (was 28/4); `npm run test:e2e` and
+      `npx eslint src/` still clean (the one existing `main.ts`
+      floating-promise warning is unrelated). Remaining sub-steps:
+      `CommentsResolver`'s subscription `filter`, then GraphQL E2E.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
