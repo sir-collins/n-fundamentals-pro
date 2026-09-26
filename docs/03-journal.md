@@ -2008,3 +2008,50 @@ Process slip, worth recording: I started this step on `master` instead
 of a `project-8-step-5-...` branch like every earlier step. Caught
 before any commit was made, so the branch was created afterwards, with
 the uncommitted work carried over.
+
+## 2026-09-26 — Testing logic that lives inside a decorator
+
+Second sub-step of resolver testing. `CommentsResolver` has almost no
+method body. Its one real rule, "a subscriber to song 3 never sees song
+4's comments", was an arrow function passed to `@Subscription({ filter })`.
+Nest stores that function and calls it once for each published event.
+Calling `resolver.commentAdded(3)` in a test never touches it, so there
+was nothing for a normal unit test to reach.
+
+There were two ways to fix that. One was to read the function back out of
+Nest's decorator metadata in the test. It works, but it depends on how
+Nest stores that metadata internally, which isn't a public API. The other
+was to move it into a named, exported `commentAddedFilter` and pass
+*that* to the decorator. The second one won: identical runtime behaviour,
+and the test just imports and calls a plain function. It's the general
+fix whenever a test can't get at some logic: move the logic somewhere a
+test can call it.
+
+For the method itself, a real `PubSub` beat a mock. It's in-memory with
+no I/O, so there's no cost to using the real thing, and it proves more:
+the test publishes exactly what `CommentsService.create()` publishes and
+checks the comment actually comes out of the resolver's iterator. One
+subtlety: `iterator.next()` has to be called *before* publishing,
+because `PubSub` doesn't store events for listeners that arrive later.
+
+The sanity check was stronger this time too. Instead of breaking an
+assertion, I broke the source. Flipping the filter to `!==` failed two
+tests. Renaming the trigger to `'commentAdd'` made the iterator test
+time out, and that's the useful one: if the resolver and the service
+ever disagree on the event name, subscriptions simply go silent at
+runtime with no error anywhere. Now a test catches it.
+
+The spec also turned up a gap in config rather than code. It crashed
+before running with the same `@nestjs/mongoose` "Unexpected token
+'export'" error Project 6 fixed for E2E. That fix only ever went into
+`test/jest-e2e.json`, and no unit spec had imported a Mongo schema
+before, so the unit config's copy of the gap had never shown up. The
+same `transformIgnorePatterns` line now sits in `package.json`'s `jest`
+block too. **Lesson:** two Jest configs means two places for a fix to
+go, and a fix applied to only one stays hidden until a test that needs
+it shows up in the other.
+
+Process slip, recorded honestly: I started coding this sub-step in the
+same turn as its short explanation, instead of explaining first and
+waiting. The user caught it; the full explanation was given before
+finishing, and nothing was committed in the meantime.

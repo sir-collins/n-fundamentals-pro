@@ -873,8 +873,33 @@ Completes all three roadmap bullets for Project 7.
       in each new spec, confirmed both failed, reverted. `npm test` now
       runs 42 tests across 6 suites (was 28/4); `npm run test:e2e` and
       `npx eslint src/` still clean (the one existing `main.ts`
-      floating-promise warning is unrelated). Remaining sub-steps:
-      `CommentsResolver`'s subscription `filter`, then GraphQL E2E.
+      floating-promise warning is unrelated).
+
+      **Second sub-step done**: `CommentsResolver` now has test coverage.
+      New `comments.resolver.spec.ts` has 3 tests. Its real logic, the
+      per-song subscription `filter`, used to be an inline arrow function
+      in `@Subscription({ filter })`, which Nest only calls at runtime
+      and a direct method call never reaches. It's now moved into an
+      exported `commentAddedFilter` function that the decorator uses
+      directly. Runtime behaviour is identical, and the function can now
+      be tested on its own. That was chosen over reading the filter back
+      out of Nest's decorator metadata, which would tie the test to Nest
+      internals. The spec covers same song → delivered and different
+      song → withheld. The `commentAdded()` method itself is tested
+      against a **real** in-memory `PubSub`, not a mock: publishing the
+      exact trigger and payload shape `CommentsService.create()` uses
+      proves the event actually comes out of the resolver's iterator.
+      Found along the way: the unit Jest config (`jest` in
+      `package.json`) was missing the same `@nestjs/mongoose` ESM
+      `transformIgnorePatterns` fix Project 6 applied to
+      `test/jest-e2e.json`. This is the first unit spec to import
+      anything Mongo-related, so it now has the same fix. Sanity check
+      done by breaking the *source*, not the assertions: flipping the
+      filter to `!==` failed 2 tests, and renaming the trigger to
+      `'commentAdd'` made the iterator test time out. Both reverted.
+      `npm test` now runs 45 tests across 7 suites; `npm run test:e2e`
+      and `npx eslint src/` still clean (same unrelated `main.ts`
+      warning). Remaining sub-step: GraphQL E2E.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
