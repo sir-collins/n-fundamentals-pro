@@ -1974,3 +1974,37 @@ around already-verified mechanics, not new, unverified logic. Asked
 the user to confirm the actual click-through experience themselves,
 rather than claiming full end-to-end success on code that was never
 actually driven through a real browser in this session.
+
+## 2026-09-26 — Resolver unit tests, and what they deliberately don't test
+
+First sub-step of Project 8's "Unit + E2E testing for resolvers". The
+resolvers turned out to be the easiest thing in the app to unit test,
+because they're mostly thin wrappers: build the resolver in a
+`TestingModule` with a `createMock<SongsService>()` or
+`createMock<AuthService>()`, call the method directly, and assert. It's
+the exact pattern Project 6 set up for `SongsController`, reused as is.
+
+The more useful lesson is what these tests *can't* see. Calling
+`resolver.createSong(input)` directly skips everything GraphQL adds on
+top: `@UseGuards(GqlAuthGuard, RolesGuard)` never runs, `Int` args are
+never coerced, `ValidationPipe` never checks the input, and a thrown
+`NotFoundException` never gets formatted into an `errors[]` entry. So a
+green unit suite here says nothing about whether a non-admin can create
+a song over GraphQL. That split is on purpose: unit tests cover the
+resolver's own branching, and the upcoming E2E sub-step covers the
+wiring.
+
+The one resolver with real logic of its own was `AuthResolver.login`, so
+it got the most attention. The key test isn't the happy path. It's that
+bad credentials throw *and* `authService.login` is never called, meaning
+no token gets minted on the failure path at all. Asserting only the
+thrown exception would have missed a regression where a token got signed
+and then thrown away. The `access_token` → `accessToken` mapping also
+got its own test. That rename is the one piece of translation between
+the REST and GraphQL shapes, which makes it an easy line to break without
+noticing.
+
+Process slip, worth recording: I started this step on `master` instead
+of a `project-8-step-5-...` branch like every earlier step. Caught
+before any commit was made, so the branch was created afterwards, with
+the uncommitted work carried over.
