@@ -856,7 +856,7 @@ Completes all three roadmap bullets for Project 7.
       exact step, the same way ad hoc verification tooling gets built
       elsewhere in this project.
 
-- [ ] Unit + E2E testing for resolvers — **first sub-step done**: new
+- [x] Unit + E2E testing for resolvers — **first sub-step done**: new
       `songs.resolver.spec.ts` (8 tests) and `auth.resolver.spec.ts`
       (6 tests), same `TestingModule` + `createMock<T>()` pattern as
       Project 6's `SongsController` spec. Resolver methods are called
@@ -899,7 +899,46 @@ Completes all three roadmap bullets for Project 7.
       `'commentAdd'` made the iterator test time out. Both reverted.
       `npm test` now runs 45 tests across 7 suites; `npm run test:e2e`
       and `npx eslint src/` still clean (same unrelated `main.ts`
-      warning). Remaining sub-step: GraphQL E2E.
+      warning).
+
+      **Third sub-step done**: new `test/graphql.e2e-spec.ts` with 11
+      tests, sending real operations to `POST /graphql` so the layers
+      unit tests skip are covered too. First, a real gap to fix:
+      `Test.createTestingModule({ imports: [AppModule] })` never runs
+      `main.ts`, so its global `ValidationPipe` and `HttpExceptionFilter`
+      were missing from every E2E app. The old `GET /` test never
+      noticed. They now live in a shared `configureApp(app)`
+      (`src/configure-app.ts`), called by `main.ts` and by both E2E
+      specs, so the test app is set up exactly like the real one. Static
+      assets, Swagger and HMR stay in `main.ts`.
+      Covers: public `songs`; `song(id: 999999)` → `NotFoundException`
+      inside `errors[]` with HTTP `200`; `song(id: "abc")` → rejected by
+      Apollo before any resolver runs (HTTP `400`,
+      `GRAPHQL_VALIDATION_FAILED`, confirmed by running it rather than
+      assumed); signup → login → `profile` JWT round trip; a short
+      password → `BadRequestException` (proving the pipe is really
+      active); wrong password and token-less `profile` →
+      `UnauthorizedException`; `createSong` with no token →
+      Unauthorized, as a regular user → `ForbiddenException`, as admin →
+      created, then `deleteSong` removes it. The admin is promoted
+      through the app's own `Repository<User>`, mirroring
+      `rest-client.http`'s manual SQL (there's no API for it, on
+      purpose), and logs in only *after* the promotion, since the role is
+      stored inside the JWT.
+      Runs against the dev database, so every row the suite *could*
+      create is keyed by a per-run `stamp` and deleted in `afterAll`:
+      users, the song, and its `Artist` row. That last one was a
+      deviation from the plan, which had accepted the Project 2 orphan
+      gap; it turned out to leak one row per run. Cleanup also covers
+      rows that only exist because a test failed. Sanity check done by
+      breaking the source: removing `@Roles(ADMIN)` from `createSong`
+      failed the non-admin test; dropping the `ValidationPipe` from
+      `configureApp` failed the short-password test. Both reverted. The
+      guard break was re-run after the cleanup change: still 0 leftover
+      rows. Two clean runs in a row also left 0 rows. `npm run
+      test:e2e`: 12 tests across 2 suites; `npm test`: 45/7;
+      `npx eslint src/ test/` has no errors; the running app still
+      validates over REST and GraphQL after the `main.ts` refactor.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 

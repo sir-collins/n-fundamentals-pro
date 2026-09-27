@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from '@jest/globals';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { configureApp } from './../src/configure-app';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -14,6 +15,7 @@ describe('AppController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
   });
 

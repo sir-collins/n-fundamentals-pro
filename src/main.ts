@@ -3,9 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { configureApp } from './configure-app';
 
 // Only ever populated when running under webpack (start:hmr) — narrowly
 // typed instead of Nest's docs' `any` so this doesn't trip the project's
@@ -19,13 +18,7 @@ declare const module: {
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  // Applied globally so every controller gets DTO validation and a
-  // consistent error response shape without repeating the setup per route.
-  // transform: true lets class-transformer convert raw query/param strings
-  // (e.g. "2") into the DTO's declared types (e.g. number) before
-  // class-validator runs — required for PaginationQueryDto to work.
-  app.useGlobalPipes(new ValidationPipe({ transform: true }));
-  app.useGlobalFilters(new HttpExceptionFilter());
+  configureApp(app);
 
   // Serves public/ (currently just realtime-comments.html, the Project 7
   // WebSocket demo page) via @nestjs/platform-express's existing static

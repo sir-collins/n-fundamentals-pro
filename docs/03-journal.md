@@ -2055,3 +2055,56 @@ Process slip, recorded honestly: I started coding this sub-step in the
 same turn as its short explanation, instead of explaining first and
 waiting. The user caught it; the full explanation was given before
 finishing, and nothing was committed in the meantime.
+
+## 2026-09-27 — GraphQL E2E, and the test app that wasn't the real app
+
+Last sub-step of resolver testing, and the one that found real problems.
+
+**The `main.ts` trap.** An E2E test builds its app with
+`Test.createTestingModule({ imports: [AppModule] })`, which only knows
+about `AppModule`. Everything `main.ts` does on top of that — here, the
+global `ValidationPipe` and `HttpExceptionFilter` — simply never happens.
+The existing E2E test only did `GET /`, so for its entire life it had
+been testing an app with no validation and raw error shapes, and nothing
+about that test could have noticed. The fix was `configureApp(app)`: the
+request-handling setup moves into one function that both `main.ts` and
+the specs call, so they can't drift apart. Things that only matter to a
+real listening server (static files, Swagger, HMR) stay in `main.ts`. The
+short-password test now proves the pipe is really there. With it removed,
+that test fails.
+
+**Status codes mean something different in GraphQL.** Most failures come
+back as HTTP `200` with the real error in `errors[0].extensions.code`.
+Everything thrown from a resolver or guard works that way, so the tests
+assert on the body. The exception is a query that doesn't fit the schema
+at all (`song(id: "abc")` when `id` is `Int!`): Apollo rejects it before
+Nest is involved, with HTTP `400` and `GRAPHQL_VALIDATION_FAILED`. I
+expected that going in, and the test confirms it rather than taking it on
+trust.
+
+**Order matters when a role lives inside a token.** There's no API for
+making an admin, on purpose, so the test promotes a user through the app's
+own `Repository<User>`, the same move as the manual SQL in
+`rest-client.http`. The login has to come *after* the promotion. The JWT
+carries the role, and a token issued before the `UPDATE` would still say
+`USER` until it expired.
+
+**Cleanup is only proven by breaking things.** The sanity check broke the
+source on purpose: remove `@Roles(ADMIN)` from `createSong`, drop the
+pipe. Each failed exactly the test it should. But those broken runs also
+did what broken code does: a regular user actually created a song, and
+the invalid signup actually created a user. Neither was in the original
+cleanup, and the database showed that each normal run was also leaking
+one orphaned `Artist` row (the known Project 2 gap). The plan had
+accepted that gap, but "accepted" reads differently for a test suite that
+runs over and over. Every row the suite *could* create is now keyed by a
+per-run `stamp` and deleted in `afterAll`, whether or not the test that
+created it passed. Checked the only way that counts: re-ran the guard
+break and counted the leftover rows, which was zero.
+
+One more: the "does the real app still validate?" check hit port 3000,
+which turned out to already be in use. Before trusting the responses,
+worth finding out *whose* server answered. It was the user's own
+`nest start --watch`, which had already restarted on the new code (its
+`dist/main.js` contained `configureApp`), so the result held up. That was
+only known because it got checked, not assumed.
