@@ -36,7 +36,7 @@ describe('GraphQL API (e2e)', () => {
   const adminEmail = `e2e-${stamp}-admin@example.com`;
   const invalidEmail = `e2e-${stamp}-short@example.com`;
   const songTitle = `E2E Song ${stamp}`;
-  const artistName = `E2E Artist ${stamp}`;
+  const artistNames = [`E2E Artist ${stamp} A`, `E2E Artist ${stamp} B`];
   let userToken: string;
   let adminToken: string;
 
@@ -86,9 +86,9 @@ describe('GraphQL API (e2e)', () => {
       title: songTitle,
     });
     // `SongsService.remove` never deletes artists (known gap since
-    // Project 2), so without this every run would leak one Artist row.
+    // Project 2), so without this every run would leak its Artist rows.
     await app.get<Repository<Artist>>(getRepositoryToken(Artist)).delete({
-      name: artistName,
+      name: In(artistNames),
     });
     await usersRepository.delete({
       email: In([userEmail, adminEmail, invalidEmail]),
@@ -172,7 +172,7 @@ describe('GraphQL API (e2e)', () => {
     }`;
     const input = {
       title: songTitle,
-      artists: [artistName],
+      artists: artistNames,
       releaseDate: '2024-01-01',
       duration: '03:30',
     };
@@ -209,6 +209,33 @@ describe('GraphQL API (e2e)', () => {
       expect(res.errors).toBeUndefined();
       expect(res.data?.createSong).toMatchObject({ title: input.title });
       createdSongId = (res.data?.createSong as { id: number }).id;
+    });
+
+    it('resolves artists through the batched field on both read paths', async () => {
+      // Neither query joins artists any more — both go through the
+      // per-request DataLoader behind `Song.artists`.
+      const single = await gql(
+        `query ($id: Int!) { song(id: $id) { artists { name } } }`,
+        { id: createdSongId },
+      );
+      const list = await gql(
+        `{ songs(limit: 100) { data { id artists { name } } } }`,
+      );
+
+      const names = (artists: { name: string }[]) =>
+        artists.map((artist) => artist.name).sort();
+      const fromSingle = (single.data?.song as { artists: { name: string }[] })
+        .artists;
+      const fromList = (
+        list.data?.songs as {
+          data: { id: number; artists: { name: string }[] }[];
+        }
+      ).data.find((song) => song.id === createdSongId)?.artists;
+
+      expect(single.errors).toBeUndefined();
+      expect(list.errors).toBeUndefined();
+      expect(names(fromSingle)).toEqual(artistNames);
+      expect(names(fromList ?? [])).toEqual(artistNames);
     });
 
     it('lets an admin delete that song, after which it is gone', async () => {

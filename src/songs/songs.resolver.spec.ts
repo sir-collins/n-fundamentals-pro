@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it } from '@jest/globals';
 import { NotFoundException } from '@nestjs/common';
 import { SongsResolver } from './songs.resolver';
 import { SongsService } from './songs.service';
+import DataLoader from 'dataloader';
 import { Song } from './entities/song.entity';
+import { Artist } from '../artists/entities/artist.entity';
+import { GqlContext } from '../common/graphql-context';
 
 // Calls resolver methods directly, so `@UseGuards(...)` on the mutations
 // never runs here — guards, arg coercion and GraphQL error formatting are
@@ -38,7 +41,11 @@ describe('SongsResolver', () => {
       songsService.findAll.mockResolvedValue(page);
 
       expect(await resolver.songs({ page: 2, limit: 5 })).toBe(page);
-      expect(songsService.findAll).toHaveBeenCalledWith({ page: 2, limit: 5 });
+      // Artists are left to the batched `artists` field, not joined here.
+      expect(songsService.findAll).toHaveBeenCalledWith(
+        { page: 2, limit: 5 },
+        { withArtists: false },
+      );
     });
   });
 
@@ -48,6 +55,9 @@ describe('SongsResolver', () => {
       songsService.findOne.mockResolvedValue(song);
 
       expect(await resolver.song(1)).toBe(song);
+      expect(songsService.findOne).toHaveBeenCalledWith(1, {
+        withArtists: false,
+      });
     });
 
     it('throws NotFoundException when the service returns null', async () => {
@@ -98,6 +108,33 @@ describe('SongsResolver', () => {
       songsService.remove.mockResolvedValue(false);
 
       await expect(resolver.deleteSong(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('artists (field)', () => {
+    const artists = [{ id: 7, name: 'The Weeknd' }] as Artist[];
+
+    function contextWith(loader: DataLoader<number, Artist[]>): GqlContext {
+      return { loaders: { artistsBySong: loader } } as GqlContext;
+    }
+
+    it('returns artists the song already carries without touching the loader', () => {
+      const loader = createMock<DataLoader<number, Artist[]>>();
+
+      expect(
+        resolver.artists({ id: 1, artists } as Song, contextWith(loader)),
+      ).toBe(artists);
+      expect(loader.load).not.toHaveBeenCalled();
+    });
+
+    it("otherwise loads them through the request's DataLoader by song id", async () => {
+      const loader = createMock<DataLoader<number, Artist[]>>();
+      loader.load.mockResolvedValue(artists);
+
+      expect(
+        await resolver.artists({ id: 1 } as Song, contextWith(loader)),
+      ).toBe(artists);
+      expect(loader.load).toHaveBeenCalledWith(1);
     });
   });
 });

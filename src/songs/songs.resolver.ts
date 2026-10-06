@@ -1,5 +1,14 @@
 import { NotFoundException, UseGuards } from '@nestjs/common';
-import { Args, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
+import {
+  Args,
+  Context,
+  Int,
+  Mutation,
+  Parent,
+  Query,
+  ResolveField,
+  Resolver,
+} from '@nestjs/graphql';
 import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
 import { UpdateSongInput } from './dto/update-song.input';
@@ -10,6 +19,8 @@ import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { Artist } from '../artists/entities/artist.entity';
+import type { GqlContext } from '../common/graphql-context';
 
 /**
  * GraphQL layer for `songs` — a second API surface over the exact same
@@ -29,13 +40,15 @@ export class SongsResolver {
 
   @Query(() => PaginatedSongs)
   songs(@Args() pagination: PaginationQueryDto): Promise<PaginatedSongs> {
-    return this.songsService.findAll(pagination);
+    return this.songsService.findAll(pagination, { withArtists: false });
   }
 
   /** @throws NotFoundException if no song exists with `id`. */
   @Query(() => Song)
   async song(@Args('id', { type: () => Int }) id: number): Promise<Song> {
-    const song = await this.songsService.findOne(id);
+    const song = await this.songsService.findOne(id, {
+      withArtists: false,
+    });
 
     if (!song) {
       throw new NotFoundException(`Song with id ${id} was not found`);
@@ -82,5 +95,19 @@ export class SongsResolver {
     }
 
     return true;
+  }
+
+  /**
+   * Resolved per song, but batched: every call made while building one
+   * response goes through the same per-request DataLoader, so a page of N
+   * songs costs one artists query, not N. Songs from the mutations
+   * already carry their artists and skip the loader entirely.
+   */
+  @ResolveField(() => [Artist])
+  artists(
+    @Parent() song: Song,
+    @Context() context: GqlContext,
+  ): Artist[] | Promise<Artist[]> {
+    return song.artists ?? context.loaders.artistsBySong.load(song.id);
   }
 }

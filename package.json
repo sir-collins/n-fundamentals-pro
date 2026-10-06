@@ -45,6 +45,7 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "dataloader": "^2.2.3",
     "graphql": "^16.14.2",
     "graphql-subscriptions": "^3.0.0",
     "joi": "^18.2.8",

@@ -42,4 +42,38 @@ export class ArtistsService {
 
     return [...existing, ...created];
   }
+
+  /**
+   * Every artist on each of `songIds`, in one query — the batch query
+   * behind `createArtistsBySongLoader`. Only `song.id` is selected from
+   * the join, just enough to group artists back under their song.
+   * @returns a map keyed by song id; a song with no artists has no entry,
+   *   and an artist on two requested songs appears under both.
+   */
+  async findBySongIds(
+    songIds: readonly number[],
+  ): Promise<Map<number, Artist[]>> {
+    const bySong = new Map<number, Artist[]>();
+
+    if (songIds.length === 0) {
+      return bySong;
+    }
+
+    const artists = await this.artistsRepository
+      .createQueryBuilder('artist')
+      .innerJoin('artist.songs', 'song', 'song.id IN (:...songIds)', {
+        songIds,
+      })
+      .addSelect('song.id')
+      .orderBy('artist.id')
+      .getMany();
+
+    for (const artist of artists) {
+      for (const song of artist.songs) {
+        bySong.set(song.id, [...(bySong.get(song.id) ?? []), artist]);
+      }
+    }
+
+    return bySong;
+  }
 }

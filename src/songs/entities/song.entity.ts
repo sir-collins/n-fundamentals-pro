@@ -35,7 +35,7 @@ export class Song {
   // default; repository calls must ask for it via relations: ['artists'].
   @ApiProperty({ type: () => Artist, isArray: true })
   @Field(() => [Artist])
-  @ManyToMany(() => Artist)
+  @ManyToMany(() => Artist, (artist) => artist.songs)
   @JoinTable()
   artists!: Artist[];
 

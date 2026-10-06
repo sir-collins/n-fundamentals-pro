@@ -15,6 +15,10 @@ import { User } from './users/entities/user.entity';
 import { ApiKey } from './auth/entities/api-key.entity';
 import { CommentsModule } from './comments/comments.module';
 import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
+import { ArtistsModule } from './artists/artists.module';
+import { ArtistsService } from './artists/artists.service';
+import { createArtistsBySongLoader } from './artists/artists.loader';
+import { GqlContext } from './common/graphql-context';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -68,15 +72,31 @@ import { envValidationSchema } from './config/env.validation';
     // a real, committed file (not gitignored) so schema changes show up
     // as a visible diff in PRs, same as every other generated-but-tracked
     // artifact in this project (migrations, railway.json).
-    GraphQLModule.forRoot<ApolloDriverConfig>({
+    GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'schema.gql'),
-      sortSchema: true,
-      // Enables the `graphql-ws` protocol so `@Subscription()` resolvers
-      // (CommentsResolver) work — the transport package itself
-      // (graphql-ws) is already a dependency of @nestjs/graphql, not
-      // something this project had to add.
-      subscriptions: { 'graphql-ws': true },
+      imports: [ArtistsModule],
+      inject: [ArtistsService],
+      useFactory: (artistsService: ArtistsService) => ({
+        autoSchemaFile: join(process.cwd(), 'schema.gql'),
+        sortSchema: true,
+        // Enables the `graphql-ws` protocol so `@Subscription()` resolvers
+        // (CommentsResolver) work — the transport package itself
+        // (graphql-ws) is already a dependency of @nestjs/graphql, not
+        // something this project had to add.
+        subscriptions: { 'graphql-ws': true },
+        // Runs once per operation, so every request gets fresh DataLoaders
+        // (a shared one would keep serving stale cached results). Chosen
+        // over a `Scope.REQUEST` provider, which would make every resolver
+        // injecting it request-scoped too. `req` must stay: GqlAuthGuard
+        // and AuthResolver.profile read it. Subscriptions call this too,
+        // without a `req` — harmless, they never use the loaders.
+        context: ({ req }: { req: GqlContext['req'] }): GqlContext => ({
+          req,
+          loaders: {
+            artistsBySong: createArtistsBySongLoader(artistsService),
+          },
+        }),
+      }),
     }),
     SongsModule,
     AuthModule,
