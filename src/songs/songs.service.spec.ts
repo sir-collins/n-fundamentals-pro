@@ -71,6 +71,17 @@ describe('SongsService', () => {
       });
       expect(result).toEqual({ data: songs, total: 1 });
     });
+
+    it('skips the artists join when withArtists is false', async () => {
+      repository.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ page: 1, limit: 10 }, { withArtists: false });
+
+      expect(repository.findAndCount).toHaveBeenCalledWith({
+        skip: 0,
+        take: 10,
+      });
+    });
   });
 
   describe('findOne', () => {
@@ -91,6 +102,14 @@ describe('SongsService', () => {
       repository.findOne.mockResolvedValue(null);
 
       expect(await service.findOne(999)).toBeNull();
+    });
+
+    it('skips the artists join when withArtists is false', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await service.findOne(1, { withArtists: false });
+
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { id: 1 } });
     });
   });
 

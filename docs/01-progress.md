@@ -940,6 +940,56 @@ Completes all three roadmap bullets for Project 7.
       `npx eslint src/ test/` has no errors; the running app still
       validates over REST and GraphQL after the `main.ts` refactor.
 
+- [ ] Server-side caching (Apollo), Data Loader for N+1 query
+      optimization. **First sub-step done: DataLoader.** There was no N+1
+      to begin with: `SongsService.findAll`/`findOne` always joined
+      artists, even for GraphQL queries that never asked for them. So,
+      deliberately and with the user's agreement, `Song.artists` became a
+      `@ResolveField` loaded only on request. The N+1 that produced was
+      measured, then fixed with a per-request `DataLoader`.
+      SQL statements for `songs(limit: 10)` over the 6 dev songs, counted
+      by patching TypeORM's `logger.logQuery` in a throwaway spec (no
+      config change):
+
+      | Query | Before | Naive field | DataLoader |
+      |---|---|---|---|
+      | with `artists` | 2 | **7** (1 + 6) | **2** (1 + 1 batched) |
+      | without `artists` | 2 (joined anyway) | 1 | **1** |
+
+      Batched artists matched the REST join for all 6 songs (0
+      mismatches). New `ArtistsService.findBySongIds` (one query, returns
+      a `Map<songId, Artist[]>`) and `createArtistsBySongLoader`
+      (`src/artists/artists.loader.ts`), which re-indexes the map into
+      key order and gives every key a slot, `[]` if a song has no
+      artists. A loader is created per request in the GraphQL `context`
+      (`GraphQLModule.forRootAsync`, typed as `GqlContext` in
+      `src/common/graphql-context.ts`) rather than as a `Scope.REQUEST`
+      provider, which would have made `SongsResolver` request-scoped too.
+      `findAll`/`findOne` gained a `{ withArtists }` option (default
+      `true`), so REST is unchanged; the resolver passes `false`.
+      Mutation results already carry artists and skip the loader.
+      `dataloader@^2.2.3` checked first: no dependencies, peer
+      dependencies or install scripts.
+      **Found and fixed a Project 2 latent bug:** `Artist.songs` had never
+      worked. `Song.artists` didn't name it as its inverse, so the
+      relation wasn't bidirectional and joining from it crashed. Naming
+      the inverse turned out *not* to be metadata-only: `schema:log`
+      showed it would silently change the join table's `artistId` foreign
+      key to `NO ACTION`. Explicit `onDelete`/`onUpdate: 'CASCADE'` on
+      `Artist.songs` keeps it identical to the InitialSchema migration,
+      and `schema:log` is clean again. `tsc` also caught what Jest
+      didn't: a decorated resolver signature needs `import type` for the
+      `GqlContext` interface, or `nest build` fails.
+      Tests: new `artists.loader.spec.ts` (4: batching, key order, empty
+      slot, per-loader cache), `withArtists: false` cases in the service
+      spec, `artists`-field cases in the resolver spec, plus an E2E test
+      reading a two-artist song back through both `song(id)` and `songs`.
+      Sanity check by breaking the source: ignoring key order (3 fail),
+      un-batching (1 fails), and the resolver ignoring already-loaded
+      artists (1 fails); all reverted. `npm test` 53/8; `npm run
+      test:e2e` 13/2 with 0 leftover rows; `tsc`, `nest build` and eslint
+      clean; `schema.gql` unchanged. Next: Apollo response caching.
+
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
 ## Project 10: Capstone — Advanced Feature Grab Bag — Not started

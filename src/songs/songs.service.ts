@@ -12,6 +12,11 @@ export interface Paginated<T> {
   total: number;
 }
 
+export interface FindSongOptions {
+  /** Join the song's artists in the same query. Defaults to `true`. */
+  withArtists?: boolean;
+}
+
 /** Backed by Postgres via TypeORM's `Repository<Song>`. */
 @Injectable()
 export class SongsService {
@@ -33,10 +38,17 @@ export class SongsService {
     return this.songsRepository.save(song);
   }
 
-  /** List songs, one page at a time, with their artists populated. */
-  async findAll({ page, limit }: PaginationQueryDto): Promise<Paginated<Song>> {
+  /**
+   * List songs, one page at a time, with their artists populated unless
+   * `withArtists: false` — GraphQL's opt-out, since it loads artists
+   * separately (batched) and only when a client actually asks for them.
+   */
+  async findAll(
+    { page, limit }: PaginationQueryDto,
+    { withArtists = true }: FindSongOptions = {},
+  ): Promise<Paginated<Song>> {
     const [data, total] = await this.songsRepository.findAndCount({
-      relations: { artists: true },
+      ...(withArtists && { relations: { artists: true } }),
       skip: (page - 1) * limit,
       take: limit,
     });
@@ -44,11 +56,17 @@ export class SongsService {
     return { data, total };
   }
 
-  /** Find a song by id, with its artists populated, or `null` if none exists. */
-  findOne(id: number): Promise<Song | null> {
+  /**
+   * Find a song by id, or `null` if none exists. Artists populated unless
+   * `withArtists: false` (see `findAll`).
+   */
+  findOne(
+    id: number,
+    { withArtists = true }: FindSongOptions = {},
+  ): Promise<Song | null> {
     return this.songsRepository.findOne({
       where: { id },
-      relations: { artists: true },
+      ...(withArtists && { relations: { artists: true } }),
     });
   }
 

@@ -2108,3 +2108,61 @@ worth finding out *whose* server answered. It was the user's own
 `nest start --watch`, which had already restarted on the new code (its
 `dist/main.js` contained `configureApp`), so the result held up. That was
 only known because it got checked, not assumed.
+
+## 2026-09-28 — DataLoader, and creating a problem in order to fix it
+
+The roadmap says "DataLoader for N+1", but this app had no N+1. Both
+`SongsService` reads joined artists in the same SQL query, every time. For
+REST that's right, because every REST response includes artists. For
+GraphQL it's the problem GraphQL exists to avoid: `{ songs { data { title } } }`
+still paid for the join, and, because join + pagination can't be done in
+one statement, TypeORM paid for an extra `SELECT DISTINCT` on top.
+
+So the first move was to make `Song.artists` a field that only loads when a
+client asks for it, which *creates* the N+1, and to measure it rather than
+describe it. TypeORM calls `logger.logQuery` on every statement whether or
+not logging is on, so patching that in a throwaway spec counted queries
+without touching any app config. The naive field turned a page of 6 songs
+into 7 statements. With DataLoader it's 2, and the query that doesn't ask
+for artists dropped from 2 to 1. A final comparison against the REST join
+confirmed the batched artists are identical for every song, since fewer
+queries only counts if the answers are still right.
+
+**The two rules DataLoader enforces**, each now pinned by a test:
+- Results must come back in key order, one per key. The SQL (and the
+  `Map` built from it) comes back in any order, so the batch function
+  re-indexes by the requested ids, and a song with no artists still gets
+  its `[]`. Breaking this failed three tests at once; DataLoader itself
+  also rejects a batch of the wrong length.
+- One loader per request. It caches by key, so a shared one would serve
+  whatever it loaded first, forever. It's created in the GraphQL `context`
+  function, which runs once per operation. A `Scope.REQUEST` provider would
+  also work, but Nest would then make every class that injects it
+  request-scoped too (`SongsResolver` included), which means a new
+  resolver instance on every request. The context keeps the lifetime
+  explicit and the resolvers singletons.
+
+**A Project 2 bug, found by the first thing to use it.** `Artist.songs`
+was declared back in Project 2 but had never been queried. The first join
+through it crashed: `Song.artists` never named it as its inverse, so
+TypeORM didn't treat the relation as two-way. The fix looked like
+metadata only, and I said as much, but `typeorm schema:log` showed
+otherwise. Making the relation bidirectional moves the join table's
+`artistId` foreign-key rules to `Artist.songs`, which defaulted them to
+`NO ACTION`, silently different from the `CASCADE` the InitialSchema
+migration created. Explicit `onDelete`/`onUpdate: 'CASCADE'` brought
+`schema:log` back to "up to date". **Lesson:** an ORM relation's options
+can move to a different decorator when you complete a relationship, and
+`schema:log` is the cheap way to prove a change really is metadata-only.
+
+**Jest isn't the compiler.** All 53 unit tests and 13 E2E tests passed
+while `tsc` rejected the code: an interface used in a *decorated* method
+signature needs `import type` when `emitDecoratorMetadata` is on, and
+ts-jest doesn't check that. `nest build` would have failed. Running `tsc
+--noEmit` is now part of the checklist for any change that touches
+decorated signatures.
+
+Smaller process note: a throwaway measurement script hung. A dynamic
+`import()` failed under CommonJS Jest before `app.close()` ran, leaving
+connections open. The fix was a static import, `try/finally` around
+the check, and `--forceExit` as a backstop.

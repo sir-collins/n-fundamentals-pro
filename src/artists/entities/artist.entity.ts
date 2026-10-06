@@ -26,6 +26,13 @@ export class Artist {
   // Not surfaced in API docs or the GraphQL schema — Song.artists already
   // shows this side of the relation, and exposing both directions would
   // create a circular schema for no benefit (same call as the Swagger step).
-  @ManyToMany(() => Song, (song) => song.artists)
+  // Both CASCADE options keep the join table's artistId foreign key
+  // exactly as the InitialSchema migration created it: once Song.artists
+  // names this side as its inverse, TypeORM takes that key's rules from
+  // here, and would otherwise default both to NO ACTION.
+  @ManyToMany(() => Song, (song) => song.artists, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  })
   songs!: Song[];
 }
