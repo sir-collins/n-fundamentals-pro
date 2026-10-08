@@ -2217,3 +2217,74 @@ directives, so the hints don't show up there; the tests are what prove
 they're applied. And the cache lives in memory, per process: it's lost
 on restart and isn't shared between instances. Fine for this app; a
 multi-instance deployment would want a shared store such as Redis.
+
+## 2026-10-08 — A field from someone else's API, and what it surfaced
+
+Last Project 8 item: `Artist.profile`, fetched live from Deezer. To the
+client it's just another field. Inside, the work is everything a
+database never makes you think about.
+
+**Probe the API before trusting it.** One deliberately bad request,
+before writing any code, showed that Deezer reports errors with
+**HTTP 200** and an `{ error: … }` body. Code checking only `res.ok`
+would have treated an API error as "no results". There's now a unit test
+for exactly that response, and removing the body check fails it. Search
+results also turned out to include duplicate names, which is why we take
+the first *exact* match rather than the first result.
+
+**Partial results are GraphQL's answer to unreliable dependencies.** If
+Deezer fails for one artist, the response still carries the song and
+every artist. Only that one `profile` is `null`, with the reason in
+`errors[]` and a `path` pointing at it. Getting there took two pieces.
+First, DataLoader: a batch that rejects fails *every* key in it, so the
+batch function turns each failure into that key's own `Error`. Removing
+that made a perfectly healthy artist lose its profile in the E2E test.
+Second, the error format, which is where the real surprise was.
+
+**Nest doesn't run filters on field resolvers by default.** The first
+E2E run had the partial result exactly right, but the error code was
+Apollo's bare `INTERNAL_SERVER_ERROR`, not `BadGatewayException`. Nest
+only applies guards, interceptors and filters to `@ResolveField`
+resolvers if they're listed in `fieldResolverEnhancers`, which defaults
+to `[]`. That's a performance default, since field resolvers can run
+thousands of times per query. So the global `HttpExceptionFilter` had
+never applied to any field resolver. It only became visible now because
+`profile` is the first field resolver that throws. Turned on for
+`filters` only, with a comment explaining why. Confirmed in Nest's
+`resolvers-explorer.service.js` rather than from memory.
+
+**`instanceof` across JavaScript realms.** The timeout unit test failed:
+a timeout was reported as "unreachable". The `DOMException` from
+`AbortSignal.timeout` *is* an `instanceof Error` in the real app, but
+Jest runs code in a separate realm, and `instanceof` compares against
+that realm's `Error`. Two one-line `node` checks confirmed it (true in
+the main realm, false across a `vm` context). The code now checks
+`error.name === 'TimeoutError'`, which works in any realm. The test was
+right; the code was fragile.
+
+**DataLoader without batching.** Deezer has no "look up many artists"
+endpoint, so the loader can't turn N lookups into one. It still earns
+its place: an artist on five songs costs one HTTP call per request, not
+five, and distinct artists are looked up in parallel. It's the same tool
+as step 6.1, used for a different purpose.
+
+**Keep tests off the internet.** Real Deezer calls in tests would be
+slow, rate-limited and fail offline. Unit tests replace `fetch`, and the
+E2E suite uses `.overrideProvider(DeezerService)` so the *real* app (its
+resolvers, loaders, filter and cache plugin) runs against a fake that
+returns a profile for one artist and throws for the other. Real Deezer
+was checked once, by hand: The Weeknd came back with 14.7M fans. That
+check also showed the limit of name matching: the seed's "Test Artist"
+matched a real Deezer artist of that exact name. Matching on names can
+rule out *different* names but can't prove *identity*. A production app
+would confirm a Deezer id once and store it.
+
+Two last catches. Under the sanity check, my first attempt at "remove the
+per-key catch" broke the file's syntax, and the suite reported `0 total`
+tests, which proves nothing. It was redone with a clean replacement that
+compiles, and that version failed as predicted. And `tsc` once again
+caught a type error in a spec that Jest's transpile-only mode let through.
+
+That completes Project 8: queries/mutations, error handling, auth,
+subscriptions, resolver tests, DataLoader, response caching, and an
+external API.

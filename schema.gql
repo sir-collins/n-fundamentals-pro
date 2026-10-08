@@ -7,6 +7,15 @@ directive @cacheControl(inheritMaxAge: Boolean, maxAge: Int, scope: CacheControl
 type Artist {
   id: Int!
   name: String!
+  profile: ArtistProfile
+}
+
+type ArtistProfile {
+  albums: Int!
+  deezerId: Int!
+  fans: Int!
+  link: String!
+  pictureUrl: String!
 }
 
 enum CacheControlScope {

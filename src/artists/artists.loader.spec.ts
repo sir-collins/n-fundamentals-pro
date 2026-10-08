@@ -1,6 +1,12 @@
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it } from '@jest/globals';
-import { createArtistsBySongLoader } from './artists.loader';
+import { BadGatewayException } from '@nestjs/common';
+import {
+  createArtistProfileLoader,
+  createArtistsBySongLoader,
+} from './artists.loader';
+import { DeezerService } from './deezer.service';
+import { ArtistProfile } from './dto/artist-profile.type';
 import { ArtistsService } from './artists.service';
 import { Artist } from './entities/artist.entity';
 
@@ -61,5 +67,52 @@ describe('createArtistsBySongLoader', () => {
     await loader.load(1);
 
     expect(artistsService.findBySongIds).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createArtistProfileLoader', () => {
+  let deezerService: DeepMocked<DeezerService>;
+
+  const profile = { deezerId: 1, fans: 10 } as ArtistProfile;
+
+  beforeEach(() => {
+    deezerService = createMock<DeezerService>();
+  });
+
+  it('calls Deezer once per distinct name, however often it is requested', async () => {
+    deezerService.findArtistProfile.mockResolvedValue(profile);
+    const loader = createArtistProfileLoader(deezerService);
+
+    // e.g. one artist appearing on three songs in the same response.
+    await Promise.all([
+      loader.load('The Weeknd'),
+      loader.load('The Weeknd'),
+      loader.load('The Weeknd'),
+      loader.load('Daft Punk'),
+    ]);
+
+    expect(deezerService.findArtistProfile).toHaveBeenCalledTimes(2);
+    expect(deezerService.findArtistProfile).toHaveBeenCalledWith('The Weeknd');
+    expect(deezerService.findArtistProfile).toHaveBeenCalledWith('Daft Punk');
+  });
+
+  it('fails only the key whose lookup failed, not the whole batch', async () => {
+    deezerService.findArtistProfile.mockImplementation((name) =>
+      name === 'Broken'
+        ? Promise.reject(new BadGatewayException('Deezer error'))
+        : Promise.resolve(profile),
+    );
+    const loader = createArtistProfileLoader(deezerService);
+
+    const [ok, broken] = await Promise.allSettled([
+      loader.load('The Weeknd'),
+      loader.load('Broken'),
+    ]);
+
+    expect(ok).toEqual({ status: 'fulfilled', value: profile });
+    expect(broken).toMatchObject({ status: 'rejected' });
+    expect((broken as PromiseRejectedResult).reason).toBeInstanceOf(
+      BadGatewayException,
+    );
   });
 });

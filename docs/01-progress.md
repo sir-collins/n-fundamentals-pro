@@ -589,7 +589,7 @@ Completes all three roadmap bullets for Project 7.
       `npm test` (28/4), `npm run test:e2e` (1/1), and `npx eslint
       src/ test/` all still clean.
 
-## Project 8 (Branch B): GraphQL API — 🚧 In progress
+## Project 8 (Branch B): GraphQL API — ✅ Done
 
 - [x] Set up a GraphQL server; define Queries & Mutations; resolve
       them — first sub-step of the roadmap's own "meatiest branch,
@@ -1023,6 +1023,55 @@ Completes all three roadmap bullets for Project 7.
       test` 53/8; `npm run test:e2e` 17/2 with 0 leftover rows; `tsc`,
       `nest build`, eslint clean. Live check on the built app: second
       request returned `age: 0` (a hit); REST sends no cache headers.
+
+- [x] Call an external REST API from within a resolver. New nullable
+      `Artist.profile` field (`ArtistProfile`: `deezerId`, `link`,
+      `pictureUrl`, `fans`, `albums`), fetched live from Deezer's public
+      search API with Node's built-in `fetch` (no new dependency) in an
+      injectable `DeezerService` (`src/artists/deezer.service.ts`).
+      Base URL from a new, Joi-validated `DEEZER_API_URL` (defaults to
+      `https://api.deezer.com`; added to `.env.example`). Every call has
+      a 3s `AbortSignal.timeout`. A timeout → `GatewayTimeoutException`;
+      unreachable, a non-2xx status, or **an error body sent with HTTP
+      200** (how Deezer actually reports API errors, found by probing
+      it) → `BadGatewayException`. Only an exact, case-insensitive name
+      match is accepted; otherwise `null`, since a search always returns
+      *someone*. Lookups go through a per-request DataLoader keyed by
+      name. Deezer has no batch endpoint, so its job is deduplication
+      (an artist on many songs = one call) and parallel calls. Each
+      key's failure is returned as that key's `Error`, so one failed
+      lookup only nulls that artist's `profile`. `ArtistProfile`
+      carries the public cache hint so `profile` queries stay
+      cacheable, and responses with errors are never cached.
+      **Found and fixed along the way:** Nest doesn't run filters (or
+      guards/interceptors) on `@ResolveField` resolvers unless they're
+      listed in `fieldResolverEnhancers`, so a field resolver's
+      `BadGatewayException` reached clients as a bare
+      `INTERNAL_SERVER_ERROR`. Now `fieldResolverEnhancers: ['filters']`
+      (filters only). Also: the timeout check originally used
+      `instanceof Error`, which fails for a `DOMException` from another
+      JS realm (as under Jest); it now checks `error.name`.
+      Tests: new `deezer.service.spec.ts` (10, `fetch` replaced: match,
+      case-insensitivity, skipping a non-matching first result, no
+      match, empty, HTTP 500, 200-with-error-body, unreachable, timeout,
+      URL encoding + signal); loader spec (dedup, per-key failure);
+      `artists.resolver.spec.ts`; and an E2E test using
+      `.overrideProvider(DeezerService)` (no real HTTP). The E2E test
+      proves a **partial result**: the song and both artists are
+      returned, one profile is filled, the other is `null`, with a
+      `BadGatewayException` in `errors[]` whose `path` ends in `profile`,
+      and the response isn't cached. Sanity check by breaking the
+      source: removing the per-key catch made artist A lose its profile
+      too (E2E + loader tests fail); ignoring the in-body error and
+      taking the first result instead of an exact match each failed
+      the right unit tests. All reverted. `npm test` 66/10; `npm run
+      test:e2e` 18/2 with 0 leftover rows; `tsc`, `nest build`, eslint
+      clean; `schema.gql` gained just `ArtistProfile` and
+      `Artist.profile`. Live check against real Deezer: The Weeknd got
+      their real profile (14.7M fans, 86 albums). The seed's "Test
+      Artist" also matched a real Deezer artist of that exact name, a
+      known limit of name matching (a real app would confirm and store
+      the Deezer id once).
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 
