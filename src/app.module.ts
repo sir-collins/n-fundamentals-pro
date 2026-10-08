@@ -17,7 +17,11 @@ import { CommentsModule } from './comments/comments.module';
 import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
 import { ArtistsModule } from './artists/artists.module';
 import { ArtistsService } from './artists/artists.service';
-import { createArtistsBySongLoader } from './artists/artists.loader';
+import {
+  createArtistProfileLoader,
+  createArtistsBySongLoader,
+} from './artists/artists.loader';
+import { DeezerService } from './artists/deezer.service';
 import { GqlContext } from './common/graphql-context';
 import { cacheControlDirective } from './common/cache-control';
 import responseCachePlugin from '@apollo/server-plugin-response-cache';
@@ -77,8 +81,11 @@ import { envValidationSchema } from './config/env.validation';
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ArtistsModule],
-      inject: [ArtistsService],
-      useFactory: (artistsService: ArtistsService) => ({
+      inject: [ArtistsService, DeezerService],
+      useFactory: (
+        artistsService: ArtistsService,
+        deezerService: DeezerService,
+      ) => ({
         autoSchemaFile: join(process.cwd(), 'schema.gql'),
         sortSchema: true,
         // Enables the `graphql-ws` protocol so `@Subscription()` resolvers
@@ -90,6 +97,14 @@ import { envValidationSchema } from './config/env.validation';
         // as the response's cache hints allow (see common/cache-control.ts).
         plugins: [responseCachePlugin()],
         buildSchemaOptions: { directives: [cacheControlDirective] },
+        // Nest skips guards/interceptors/filters on @ResolveField resolvers
+        // unless listed here — without 'filters', a field resolver's
+        // HttpException (e.g. Artist.profile's BadGatewayException) bypasses
+        // HttpExceptionFilter and reaches clients as a bare
+        // INTERNAL_SERVER_ERROR. Filters only: guards and interceptors
+        // aren't needed per field, and each enhancer listed adds per-field
+        // overhead.
+        fieldResolverEnhancers: ['filters'],
         // Runs once per operation, so every request gets fresh DataLoaders
         // (a shared one would keep serving stale cached results). Chosen
         // over a `Scope.REQUEST` provider, which would make every resolver
@@ -100,6 +115,7 @@ import { envValidationSchema } from './config/env.validation';
           req,
           loaders: {
             artistsBySong: createArtistsBySongLoader(artistsService),
+            artistProfile: createArtistProfileLoader(deezerService),
           },
         }),
       }),

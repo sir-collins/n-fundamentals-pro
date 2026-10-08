@@ -25,4 +25,7 @@ export const envValidationSchema = Joi.object({
   // A dedicated toggle rather than tying this to NODE_ENV — explicit and
   // independently switchable, not implicitly flipped by environment.
   ENABLE_SWAGGER: Joi.boolean().default(true),
+  // Base URL for the Deezer public API behind `Artist.profile`. Defaulted
+  // (it's public, needs no key); overridable for tests or a proxy.
+  DEEZER_API_URL: Joi.string().uri().default('https://api.deezer.com'),
 });

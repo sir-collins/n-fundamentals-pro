@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { BadGatewayException, INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import request from 'supertest';
@@ -10,9 +10,12 @@ import { configureApp } from './../src/configure-app';
 import { User, UserRole } from './../src/users/entities/user.entity';
 import { Song } from './../src/songs/entities/song.entity';
 import { Artist } from './../src/artists/entities/artist.entity';
+import { DeezerService } from './../src/artists/deezer.service';
+import { ArtistProfile } from './../src/artists/dto/artist-profile.type';
 
 interface GqlError {
   message: string;
+  path?: (string | number)[];
   extensions: { code: string; statusCode?: number };
 }
 
@@ -39,6 +42,13 @@ describe('GraphQL API (e2e)', () => {
   const songTitle = `E2E Song ${stamp}`;
   const staleSongTitle = `E2E Song ${stamp} stale`;
   const artistNames = [`E2E Artist ${stamp} A`, `E2E Artist ${stamp} B`];
+  const fakeProfile: ArtistProfile = {
+    deezerId: 42,
+    link: 'https://www.deezer.com/artist/42',
+    pictureUrl: 'https://cdn.example/42.jpg',
+    fans: 1000,
+    albums: 3,
+  };
   let userToken: string;
   let adminToken: string;
 
@@ -78,7 +88,25 @@ describe('GraphQL API (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      // Swaps the real Deezer client for a fake inside the real app, so
+      // resolvers, loaders and error formatting all run for real but no
+      // request ever leaves the machine (no flakiness, rate limits or
+      // network dependency). Artist A has a profile; artist B's lookup
+      // fails the way a Deezer outage would.
+      .overrideProvider(DeezerService)
+      .useValue({
+        findArtistProfile: (name: string): Promise<ArtistProfile | null> => {
+          if (name === artistNames[0]) {
+            return Promise.resolve(fakeProfile);
+          }
+          if (name === artistNames[1]) {
+            return Promise.reject(new BadGatewayException('Deezer error'));
+          }
+          return Promise.resolve(null);
+        },
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
@@ -215,6 +243,35 @@ describe('GraphQL API (e2e)', () => {
       expect(res.errors).toBeUndefined();
       expect(res.data?.createSong).toMatchObject({ title: input.title });
       createdSongId = (res.data?.createSong as { id: number }).id;
+    });
+
+    it('returns a partial result when one artist profile lookup fails', async () => {
+      const QUERY = `query ($id: Int!) {
+        song(id: $id) { title artists { name profile { deezerId fans } } }
+      }`;
+      const res = await gql(QUERY, { id: createdSongId });
+
+      // The song and both artists still come back...
+      const song = res.data?.song as {
+        title: string;
+        artists: {
+          name: string;
+          profile: { deezerId: number; fans: number } | null;
+        }[];
+      };
+      expect(song.title).toBe(songTitle);
+      const byName = new Map(song.artists.map((a) => [a.name, a.profile]));
+      expect(byName.get(artistNames[0])).toEqual({ deezerId: 42, fans: 1000 });
+      // ...only the failed field is null, with the reason in errors[].
+      expect(byName.get(artistNames[1])).toBeNull();
+      expect(res.errors).toHaveLength(1);
+      expect(res.errors?.[0].extensions.code).toBe('BadGatewayException');
+      expect(res.errors?.[0].path?.at(-1)).toBe('profile');
+
+      // A response with errors is never cached, so an outage isn't
+      // served from the cache for the next 30 seconds.
+      const again = await gql(QUERY, { id: createdSongId });
+      expect(again.headers['age']).toBeUndefined();
     });
 
     it('resolves artists through the batched field on both read paths', async () => {

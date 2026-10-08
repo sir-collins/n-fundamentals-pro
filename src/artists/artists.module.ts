@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Artist } from './entities/artist.entity';
 import { ArtistsService } from './artists.service';
+import { DeezerService } from './deezer.service';
+import { ArtistsResolver } from './artists.resolver';
 
 /**
  * No controller yet — artists are only created indirectly, through songs,
@@ -10,7 +12,7 @@ import { ArtistsService } from './artists.service';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Artist])],
-  providers: [ArtistsService],
-  exports: [ArtistsService],
+  providers: [ArtistsService, DeezerService, ArtistsResolver],
+  exports: [ArtistsService, DeezerService],
 })
 export class ArtistsModule {}
