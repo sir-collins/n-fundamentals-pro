@@ -6,7 +6,8 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
-import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { Directive, Field, Int, ObjectType } from '@nestjs/graphql';
+import { PUBLIC_CACHE_HINT } from '../../common/cache-control';
 import { Artist } from '../../artists/entities/artist.entity';
 
 /**
@@ -18,6 +19,7 @@ import { Artist } from '../../artists/entities/artist.entity';
  * this), no separate GraphQL-only type to keep in sync.
  */
 @ObjectType()
+@Directive(PUBLIC_CACHE_HINT)
 @Entity()
 export class Song {
   @ApiProperty()

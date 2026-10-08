@@ -19,6 +19,8 @@ import { ArtistsModule } from './artists/artists.module';
 import { ArtistsService } from './artists/artists.service';
 import { createArtistsBySongLoader } from './artists/artists.loader';
 import { GqlContext } from './common/graphql-context';
+import { cacheControlDirective } from './common/cache-control';
+import responseCachePlugin from '@apollo/server-plugin-response-cache';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -84,6 +86,10 @@ import { envValidationSchema } from './config/env.validation';
         // (graphql-ws) is already a dependency of @nestjs/graphql, not
         // something this project had to add.
         subscriptions: { 'graphql-ws': true },
+        // Caches whole query results in memory, per process, for as long
+        // as the response's cache hints allow (see common/cache-control.ts).
+        plugins: [responseCachePlugin()],
+        buildSchemaOptions: { directives: [cacheControlDirective] },
         // Runs once per operation, so every request gets fresh DataLoaders
         // (a shared one would keep serving stale cached results). Chosen
         // over a `Scope.REQUEST` provider, which would make every resolver

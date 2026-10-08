@@ -18,6 +18,7 @@ interface GqlError {
 
 interface GqlResponse {
   status: number;
+  headers: Record<string, string>;
   data?: Record<string, unknown> | null;
   errors?: GqlError[];
 }
@@ -36,6 +37,7 @@ describe('GraphQL API (e2e)', () => {
   const adminEmail = `e2e-${stamp}-admin@example.com`;
   const invalidEmail = `e2e-${stamp}-short@example.com`;
   const songTitle = `E2E Song ${stamp}`;
+  const staleSongTitle = `E2E Song ${stamp} stale`;
   const artistNames = [`E2E Artist ${stamp} A`, `E2E Artist ${stamp} B`];
   let userToken: string;
   let adminToken: string;
@@ -53,8 +55,12 @@ describe('GraphQL API (e2e)', () => {
     }
 
     const res = await req.send({ query, variables });
-    const body = res.body as Omit<GqlResponse, 'status'>;
-    return { status: res.status, ...body };
+    const body = res.body as Omit<GqlResponse, 'status' | 'headers'>;
+    return {
+      status: res.status,
+      headers: res.headers,
+      ...body,
+    };
   }
 
   const SIGNUP = `mutation ($input: SignupDto!) {
@@ -83,7 +89,7 @@ describe('GraphQL API (e2e)', () => {
 
   afterAll(async () => {
     await app.get<Repository<Song>>(getRepositoryToken(Song)).delete({
-      title: songTitle,
+      title: In([songTitle, staleSongTitle]),
     });
     // `SongsService.remove` never deletes artists (known gap since
     // Project 2), so without this every run would leak its Artist rows.
@@ -250,6 +256,81 @@ describe('GraphQL API (e2e)', () => {
         id: createdSongId,
       });
       expect(lookup.errors?.[0].extensions.code).toBe('NotFoundException');
+    });
+  });
+
+  // Runs last: it needs the user and admin tokens from the sections above.
+  // Each E2E file boots its own app, so the in-memory cache starts empty,
+  // and cache keys are the query text + variables, so the queries here
+  // don't collide with any earlier test's.
+  describe('response caching', () => {
+    const CACHED_LIST = `{ songs(limit: 50) { total data { title artists { name } } } }`;
+    let totalBefore: number;
+
+    it('serves a repeated public query from the cache', async () => {
+      const first = await gql(CACHED_LIST);
+      expect(first.errors).toBeUndefined();
+      expect(first.headers['cache-control']).toBe('max-age=30, public');
+      expect(first.headers['age']).toBeUndefined();
+      totalBefore = (first.data?.songs as { total: number }).total;
+
+      const second = await gql(CACHED_LIST);
+      // `age` is only set on a cache hit: no resolver ran for this one.
+      expect(second.headers['age']).toBeDefined();
+      expect(second.data).toEqual(first.data);
+    });
+
+    it('keeps serving the cached result after a write, until it expires', async () => {
+      const created = await gql(
+        `mutation ($input: CreateSongDto!) { createSong(input: $input) { id } }`,
+        {
+          input: {
+            title: staleSongTitle,
+            artists: artistNames,
+            releaseDate: '2024-01-01',
+            duration: '03:30',
+          },
+        },
+        adminToken,
+      );
+      expect(created.errors).toBeUndefined();
+
+      // Same query text → same cache entry → the pre-write total. This is
+      // the accepted trade-off of a 30s maxAge with no invalidation.
+      const cached = await gql(CACHED_LIST);
+      expect(cached.headers['age']).toBeDefined();
+      expect((cached.data?.songs as { total: number }).total).toBe(totalBefore);
+
+      // A different query text is a different cache key, so it reaches the
+      // database — which does have the new song.
+      const fresh = await gql(`{ songs(limit: 51) { total } }`);
+      expect(fresh.headers['age']).toBeUndefined();
+      expect((fresh.data?.songs as { total: number }).total).toBe(
+        totalBefore + 1,
+      );
+    });
+
+    it('never caches profile, so two users never see each other', async () => {
+      const PROFILE = `{ profile { email } }`;
+
+      const asUser = await gql(PROFILE, {}, userToken);
+      const asAdmin = await gql(PROFILE, {}, adminToken);
+
+      expect(asUser.data?.profile).toEqual({ email: userEmail });
+      expect(asAdmin.data?.profile).toEqual({ email: adminEmail });
+      expect(asAdmin.headers['cache-control']).toBe('no-store');
+      expect(asAdmin.headers['age']).toBeUndefined();
+    });
+
+    it('makes a whole response uncacheable if any field in it is private', async () => {
+      const MIXED = `{ songs(limit: 52) { total } profile { email } }`;
+
+      await gql(MIXED, {}, userToken);
+      const second = await gql(MIXED, {}, userToken);
+
+      expect(second.errors).toBeUndefined();
+      expect(second.headers['cache-control']).toBe('no-store');
+      expect(second.headers['age']).toBeUndefined();
     });
   });
 });
