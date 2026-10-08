@@ -1,6 +1,7 @@
 import { Column, Entity, ManyToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
-import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { Directive, Field, Int, ObjectType } from '@nestjs/graphql';
+import { PUBLIC_CACHE_HINT } from '../../common/cache-control';
 import { Song } from '../../songs/entities/song.entity';
 
 /**
@@ -9,6 +10,7 @@ import { Song } from '../../songs/entities/song.entity';
  * carries `@JoinTable()`); this is just the inverse side.
  */
 @ObjectType()
+@Directive(PUBLIC_CACHE_HINT)
 @Entity()
 export class Artist {
   @ApiProperty()

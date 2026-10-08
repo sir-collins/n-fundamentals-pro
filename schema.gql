@@ -2,9 +2,16 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+directive @cacheControl(inheritMaxAge: Boolean, maxAge: Int, scope: CacheControlScope) on FIELD_DEFINITION | INTERFACE | OBJECT | UNION
+
 type Artist {
   id: Int!
   name: String!
+}
+
+enum CacheControlScope {
+  PRIVATE
+  PUBLIC
 }
 
 type Comment {

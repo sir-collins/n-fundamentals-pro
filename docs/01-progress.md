@@ -940,7 +940,7 @@ Completes all three roadmap bullets for Project 7.
       `npx eslint src/ test/` has no errors; the running app still
       validates over REST and GraphQL after the `main.ts` refactor.
 
-- [ ] Server-side caching (Apollo), Data Loader for N+1 query
+- [x] Server-side caching (Apollo), Data Loader for N+1 query
       optimization. **First sub-step done: DataLoader.** There was no N+1
       to begin with: `SongsService.findAll`/`findOne` always joined
       artists, even for GraphQL queries that never asked for them. So,
@@ -988,7 +988,41 @@ Completes all three roadmap bullets for Project 7.
       un-batching (1 fails), and the resolver ignoring already-loaded
       artists (1 fails); all reverted. `npm test` 53/8; `npm run
       test:e2e` 13/2 with 0 leftover rows; `tsc`, `nest build` and eslint
-      clean; `schema.gql` unchanged. Next: Apollo response caching.
+      clean; `schema.gql` unchanged.
+
+      **Second sub-step done: Apollo response caching.**
+      `@apollo/server-plugin-response-cache@^5.0.0` (peer dependencies
+      checked: `@apollo/server ^5`, `graphql ^16.11`; no install
+      scripts) caches whole query results in memory for up to 30s.
+      Hints are **opt-in, type-level**: `@Directive(PUBLIC_CACHE_HINT)`
+      (`src/common/cache-control.ts`) on `Song`, `Artist` and
+      `PaginatedSongs` only, covering `songs`, `song`,
+      `PaginatedSongs.data` and `Song.artists`. Apollo caches a response
+      for the *lowest* `maxAge` of its fields, and unhinted object fields
+      count as `0`, so `User` (and with it `profile`) and any query
+      touching it are never cached. Chosen over a global default, where
+      every private field would have to remember to opt out. The
+      `@cacheControl` directive and `CacheControlScope` enum are declared
+      via `buildSchemaOptions.directives`, so `schema.gql` stays valid
+      SDL (its diff is just those two declarations; graphql-js's printer
+      leaves out applied directives). Staleness is accepted (no
+      invalidation), per the user's decision.
+      4 new E2E tests (the `gql` helper now returns headers): a repeated
+      query is a hit (`age` header present, `cache-control: max-age=30,
+      public`); a **permanent staleness test** (after `createSong`, the
+      same query still returns the old `total`, while a different query
+      text, a different cache key, returns `total + 1`); `profile` as two
+      users returns each one's own email with `no-store`; and a query
+      mixing `songs` + `profile` is `no-store` (the min rule). The 13
+      existing E2E tests were unaffected: each file boots a fresh app
+      with an empty cache, and every existing read uses a unique query
+      text. Sanity check by breaking the source: marking `User` public
+      failed the privacy test **on the actual leak** (the admin was
+      served the user's cached email), not just on the header; removing
+      the `Artist` hint failed the caching tests. Both reverted. `npm
+      test` 53/8; `npm run test:e2e` 17/2 with 0 leftover rows; `tsc`,
+      `nest build`, eslint clean. Live check on the built app: second
+      request returned `age: 0` (a hit); REST sends no cache headers.
 
 ## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
 

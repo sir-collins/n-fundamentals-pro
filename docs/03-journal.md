@@ -2166,3 +2166,54 @@ Smaller process note: a throwaway measurement script hung. A dynamic
 `import()` failed under CommonJS Jest before `app.close()` ran, leaving
 connections open. The fix was a static import, `try/finally` around
 the check, and `--forceExit` as a backstop.
+
+## 2026-10-08 — Response caching, and the field that decides for everyone
+
+Second half of the caching roadmap item. DataLoader saved queries inside
+one request; Apollo's response cache skips the resolvers entirely for a
+repeated query, serving a stored result for up to 30 seconds.
+
+**The rule that shapes everything:** a response is cacheable for the
+*lowest* `maxAge` of any field in it, and an object-typed field without
+a hint counts as `0`. That cuts both ways. It's what makes the safe
+design possible: hints go only on `Song`, `Artist` and `PaginatedSongs`
+(type-level, so every field returning those types is covered), and
+`profile`, unhinted, can never be cached, even when it shares a query
+with `songs`. A test sends exactly that mixed query twice and gets
+`no-store` both times. The flip side is that caching fails silently:
+forget one hint deep in `songs { data { artists } }` and the whole
+response quietly stays uncacheable, with no error. So the tests assert
+caching *happens* (the `age` header, set only on a hit), not just that
+the plugin is installed. Removing the `Artist` hint fails them.
+
+Opt-in beat a global default for the same reason. A default makes
+everything cacheable and relies on each private field remembering to
+opt out, forever. Opt-in fails safe: new data is uncached until someone
+decides it's public.
+
+**Staleness, made visible.** With no invalidation, a `createSong` doesn't
+reach a list already in the cache. The permanent test shows both halves:
+the same query text still returns the old `total`, while a different
+query text (a different cache key) reaches the database and sees the new
+song. Those two queries disagreeing for up to 30 seconds is the trade-off
+we chose deliberately, now written down as a test.
+
+**Reading a test failure correctly.** For the privacy sanity check I
+marked `User` as public. The first output I looked at showed only a header
+assertion failing, which looked as if the admin *hadn't* been served the
+user's profile. That would have meant the test was weaker than intended.
+Looking properly (the full suite, all failure details, then the exact
+line) showed the email assertion had failed too. It printed as a
+`- Expected / + Received` diff, which my grep for `Expected:` lines didn't
+match. So the test catches the actual leak: the admin was served someone
+else's profile. Before concluding a test is weak, read the whole failure
+output. A filtered run also misled briefly: `-t "response caching"`
+skipped the earlier tests that create the tokens, so every request
+became Unauthorized.
+
+Two smaller notes. `schema.gql` only gained the directive and enum
+declarations, because graphql-js's printer leaves out *applied*
+directives, so the hints don't show up there; the tests are what prove
+they're applied. And the cache lives in memory, per process: it's lost
+on restart and isn't shared between instances. Fine for this app; a
+multi-instance deployment would want a shared store such as Redis.

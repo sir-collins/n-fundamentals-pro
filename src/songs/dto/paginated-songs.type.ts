@@ -1,4 +1,5 @@
-import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { Directive, Field, Int, ObjectType } from '@nestjs/graphql';
+import { PUBLIC_CACHE_HINT } from '../../common/cache-control';
 import { Song } from '../entities/song.entity';
 
 /**
@@ -8,6 +9,7 @@ import { Song } from '../entities/song.entity';
  * concrete `@ObjectType()` GraphQL needs.
  */
 @ObjectType()
+@Directive(PUBLIC_CACHE_HINT)
 export class PaginatedSongs {
   @Field(() => [Song])
   data!: Song[];
