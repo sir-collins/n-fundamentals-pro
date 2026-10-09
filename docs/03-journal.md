@@ -2288,3 +2288,51 @@ caught a type error in a spec that Jest's transpile-only mode let through.
 That completes Project 8: queries/mutations, error handling, auth,
 subscriptions, resolver tests, DataLoader, response caching, and an
 external API.
+
+## 2026-10-08 — Back to Project 6: testing the code that guards everything else
+
+Closing out Project 6's testing item started with a review rather than
+code: an inventory of every service, controller and guard against its
+spec. Every Jest *technique* had been used somewhere, but the most
+important code had no tests at all: password hashing, login, the 2FA
+flow, and API keys. Coverage was 41.5% of statements, and 0% on two of
+those files. The review also corrected something I'd said: hashing
+happens in `UsersService.create`, not `AuthService.signup`, so that's
+where the "never store the plain password" test belongs.
+
+**Two kinds of auto-mocking.** `createMock<T>()` fakes something Nest
+*injects*. But `AuthService` calls `bcrypt.compare` and
+`authenticator.check` through plain `import`s, so dependency injection
+never gets a chance to swap them. `jest.mock('bcrypt')` replaces the
+module itself, before the code under test loads it. Its automatic mode
+is enough for modules that export plain functions (`bcrypt`, `qrcode`).
+`otplib`'s `authenticator` is a class instance, so it got an explicit
+factory that spells out exactly what's faked.
+
+**When to keep the real thing.** `JwtService` stayed real, for the same
+reason as the real `PubSub` in step 5.2: it's in-memory and costs
+nothing. It also makes the important tests possible. One decodes the
+2FA `tempToken` and checks that it expires in exactly 5 minutes. Another
+forges an expired one. And one presents a *normal* access token to
+`authenticateTwoFactor`. That last test is the one that matters most:
+removing the `twoFactorPending` check makes it fail. Without that check,
+any logged-in token could pass as a 2FA token.
+
+**A mocking library that hangs.** Two tests timed out instead of
+failing. Both `await`ed a `UsersService` method I hadn't programmed. The
+library's source explained it: `createMock` hides `then` on the
+top-level mock, but an unprogrammed *method* returns a nested proxy
+whose `then` is itself a mock function. `await` sees something
+promise-like, calls the fake `then`, and nothing ever resolves. The rule
+going forward: program every async method the code awaits, even when
+the result isn't read. I also tried a quick throwaway probe file for
+this, which was blocked because it wrote into `src/` and then `rm -rf`'d
+it. Reading the library's source answered the same question without
+writing anything.
+
+**Sanity checks against realistic bugs.** Each break was a plausible
+security bug rather than an arbitrary edit: storing an API key in
+plaintext, accepting any token as a 2FA session, letting anyone revoke
+anyone's key. Each one compiled and failed exactly its own test. The
+four files went from 0/20/0/45% to 100/100/100/80% statement coverage,
+and the overall figure from 41.5% to 52.1%.
