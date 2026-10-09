@@ -511,6 +511,41 @@ closed rather than just asserted to be.
       failed, reverted. `npm test` now runs 28 tests across 4 suites;
       `npx eslint src/` and `npm run test:e2e` both still clean.
 
+      **Fourth sub-step done (after Project 8)**: unit tests for the
+      security core, which had none. A review showed every Jest
+      technique was already in use, but `AuthService`,
+      `ApiKeysService`, `ApiKeyGuard` and `UsersService.create` (where
+      password hashing actually happens, not `AuthService.signup`) were
+      untested. 4 new specs, 28 tests: `users.service.spec.ts` (2),
+      `auth.service.spec.ts` (16), `api-keys.service.spec.ts` (7),
+      `api-key.guard.spec.ts` (3). New technique: **Jest module
+      mocking** for libraries the code imports directly, which DI can't
+      swap. `jest.mock('bcrypt')` and `jest.mock('qrcode')` are
+      automatic, and `otplib`'s `authenticator` instance uses an
+      explicit factory. `JwtService` is the **real** one (in-memory),
+      so tests decode issued tokens and forge an expired tempToken or
+      present a normal access token where a 2FA token is expected.
+      Covered: the stored password is the bcrypt hash; `signup` and
+      `validateUser` never return the hash; 2FA login withholds the
+      access token and issues a 5-minute `tempToken`; a wrong code
+      leaves 2FA off; `authenticateTwoFactor` rejects garbage, expired
+      and wrong-kind tokens; API keys are stored only as SHA-256
+      hashes; `revoke` treats someone else's key exactly like a
+      missing one; `listForUser` never returns hashes; `ApiKeyGuard`
+      attaches only `{ id, email, role }`. **Found a `createMock`
+      gotcha:** an unprogrammed async method returns a nested proxy
+      whose `then` is itself a mock, so awaiting it never settles and
+      the test hangs until timeout (confirmed in
+      `@golevelup/nestjs-testing`'s `mocks.js`). Awaited-but-unread
+      methods are now programmed explicitly. Sanity check by breaking
+      the source: storing the raw key, dropping the `twoFactorPending`
+      check, and skipping `revoke`'s ownership check each failed
+      exactly their test. All reverted. Coverage (statements): overall
+      **41.5% → 52.1%**; `api-keys.service` 0 → 100%, `auth.service`
+      20 → 100%, `api-key.guard` 0 → 100%, `users.service` 45 → 80%.
+      `npm test` 94/14; `tsc` and eslint clean. Remaining: the REST
+      E2E suite.
+
 ## Project 7 (Branch A): Real-Time Layer — ✅ Done
 
 - [x] Speedy Web Compiler setup — `@swc/core` + `@swc/cli` (confirmed no
