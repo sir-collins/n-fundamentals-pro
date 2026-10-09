@@ -2336,3 +2336,51 @@ plaintext, accepting any token as a 2FA session, letting anyone revoke
 anyone's key. Each one compiled and failed exactly its own test. The
 four files went from 0/20/0/45% to 100/100/100/80% statement coverage,
 and the overall figure from 41.5% to 52.1%.
+
+## 2026-10-09 — REST E2E, and what real one-time codes revealed
+
+Last piece of Project 6: an end-to-end suite for the REST API, which
+until now had exactly one E2E test (`GET /`). The new suite runs 24
+tests against the real app with both databases, covering songs, the
+full 2FA flow, API keys, and comments in MongoDB.
+
+**Real 2FA codes in a test.** The secret only ever reaches a human as a
+QR code, so the test reads it back from the database and computes codes
+with `otplib`, the same algorithm an authenticator app uses. That makes
+the flow genuinely end to end: turn 2FA on, see that login now withholds
+the access token, swap the `tempToken` plus a code for a real token, and
+use it.
+
+Using real time-based codes surfaced two things, each checked directly
+against otplib rather than assumed:
+- **`window: 0`.** Only the current 30-second step is accepted. A code
+  generated at second 29.99 and checked at 30.01 fails. That's a rare
+  flake for the test (sub-1%: the boundary has to fall in the
+  milliseconds between generating and checking) and a real annoyance for
+  users typing codes near a boundary. The test now waits for a fresh step
+  when less than 3s remain. I forced the wait path once to prove it
+  works. My first attempt at forcing it was an unfair test: a 30s wait
+  against a 15s timeout. Its failures were timeouts I caused, and with a
+  raised timeout all 24 passed.
+- **No replay protection.** The same code is accepted twice within its
+  step, so someone who sees a code can reuse it for up to 30 seconds.
+  Fixing that means app changes (remembering each user's last accepted
+  step), so it's recorded as a follow-up rather than slipped into a
+  testing step.
+
+**Cleanup across two databases with no cascades.** `ApiKey.userId` is a
+plain column, so deleting a user leaves their keys behind; they're
+deleted explicitly. MongoDB has no cascades at all, so comments are
+deleted by the test songs' ids. One check almost misled: a Mongo count
+of 0 only means something if the query hit the right collection. The
+collection held 33 real documents, none of them from tests.
+
+**Sanity checks, with knock-on effects.** Removing the comment ownership
+check failed the 403 test *and* the author's own delete, because the
+other user had already deleted that comment. It's a reminder that one
+bug can show up in more than one place. Making song creation non-admin
+failed exactly its test. Cleanup held after both broken runs.
+
+That closes Project 6. Across both sub-steps: 28 new unit tests (unit
+coverage 41.5% → 52.1%) and 24 new E2E tests, covering the security core
+and every REST area that had no tests.
