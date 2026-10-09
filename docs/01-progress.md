@@ -352,7 +352,7 @@ closed rather than just asserted to be.
       reply's `parentComment` populate resolving to `null` — no cascade
       delete implemented. `npx eslint .` and `npx jest` both clean.
 
-## Project 6: Ship It — 🚧 In progress
+## Project 6: Ship It — ✅ Done
 
 - [x] Separate dev/prod environments — mostly already done by Project 4
       step 1's config work (every value already read through
@@ -419,7 +419,7 @@ closed rather than just asserted to be.
       production Postgres, logged in, and hit `GET /auth/profile` with
       the resulting JWT — a full round trip through the real database
       and the fresh production `JWT_SECRET`, not the local dev one.
-- [ ] Testing with Jest: auto-mocking, spies, unit tests for
+- [x] Testing with Jest: auto-mocking, spies, unit tests for
       controllers & services, E2E tests — **first sub-step done**: the
       E2E suite was actually broken (crashing before any test could
       run), fixed. Two separate real bugs, found by running
@@ -543,8 +543,46 @@ closed rather than just asserted to be.
       exactly their test. All reverted. Coverage (statements): overall
       **41.5% → 52.1%**; `api-keys.service` 0 → 100%, `auth.service`
       20 → 100%, `api-key.guard` 0 → 100%, `users.service` 45 → 80%.
-      `npm test` 94/14; `tsc` and eslint clean. Remaining: the REST
-      E2E suite.
+      `npm test` 94/14; `tsc` and eslint clean.
+
+      **Fifth sub-step done: REST E2E suite.** New
+      `test/rest.e2e-spec.ts`, 24 tests against the real app, Postgres
+      **and MongoDB**, the first E2E coverage of any REST endpoint
+      beyond `GET /`. **Songs:** public paginated list; REST's
+      `{ statusCode, timestamp, path, message }` error format on a 404;
+      `ParseIntPipe` 400; 401 without a token; 403 for a non-admin;
+      validation 400 with every failed rule; admin create → update →
+      delete (204, then 404). **2FA with real TOTP codes:** turn-on
+      before a secret exists → 400; generate (QR data URL); a wrong code
+      leaves 2FA off; a real code (secret read back from the DB, code
+      from `otplib`) turns it on; login then withholds the access token
+      and returns a `tempToken`; a wrong code → 400; the right code →
+      an access token that works on `/auth/profile`; a normal access
+      token as a `tempToken` → 401. **API keys:** mint, `whoami` via
+      `x-api-key`, list without hashes or the raw key, another user's
+      revoke → 404, the owner's revoke → the key then gets 401.
+      **Comments (MongoDB):** comment + reply, listed with the parent
+      populated; a reply to a non-existent parent → 400; comments on a
+      missing song → 404; a non-author delete → 403; the author's delete;
+      an admin deleting someone else's comment (then 404).
+      **Two TOTP findings**, both confirmed by running otplib directly:
+      (1) `window: 0` means a code from the previous 30s step is
+      rejected, so the test waits for a fresh step when less than 3s
+      remain (otherwise a rare, sub-1% flake). The wait path was forced
+      once to prove it works. Real users can hit the same boundary.
+      (2) **No replay protection:** the same code is accepted twice
+      within its step. Both are recorded as app-level follow-ups, not
+      changed here (out of a testing step's scope). Cleanup covers
+      Postgres (users, songs, artists, and API keys deleted explicitly,
+      since `userId` doesn't cascade) and Mongo (comments by the test
+      songs' ids). 0 leftover rows; the Mongo `comments` collection is
+      unchanged (confirmed it was the right collection). Sanity check by
+      breaking the source: removing the comment ownership check failed
+      the 403 test (plus the author's delete, as a knock-on); making
+      `POST /songs` non-admin failed exactly its 403 test. Cleanup held
+      after those broken runs too. `npm run test:e2e` 42/3; `npm test`
+      94/14; `tsc`, eslint and Prettier clean. Unit coverage stays
+      52.1% (E2E isn't counted). This completes Project 6.
 
 ## Project 7 (Branch A): Real-Time Layer — ✅ Done
 
