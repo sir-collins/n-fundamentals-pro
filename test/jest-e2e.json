@@ -4,6 +4,7 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
+    "src/generated/.+\\.ts$": "<rootDir>/prisma-cjs-transformer.js",
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": ["node_modules/(?!(@nestjs/mongoose)/)"]

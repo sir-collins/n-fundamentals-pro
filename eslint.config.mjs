@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs', 'webpack-hmr.config.js'],
+    // src/generated: Prisma's client output — generated, not ours to lint.
+    ignores: ['eslint.config.mjs', 'webpack-hmr.config.js', 'src/generated/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -29,7 +30,7 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
   {
@@ -43,6 +44,21 @@ export default tseslint.config(
     files: ['**/*.spec.ts'],
     rules: {
       '@typescript-eslint/unbound-method': 'off',
+    },
+  },
+  {
+    // Plain JavaScript (e.g. test/prisma-cjs-transformer.js) isn't part of
+    // any tsconfig, so type-aware rules can't run on it — the project
+    // service fails to parse the file at all. Lint it without type info.
+    files: ['**/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // ...and those files are CommonJS (Jest require()s its transformers),
+    // where `require` is the module system, not a style choice.
+    files: ['**/*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 );

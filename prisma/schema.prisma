@@ -1,0 +1,52 @@
+// Project 9: the same catalog as Project 2's TypeORM entities, rebuilt
+// with Prisma to compare the two. This file is the single source of truth:
+// the TypeScript types are generated from it (`prisma generate`), not
+// written by hand as decorated classes.
+//
+// Lives in its own Postgres schema ("prisma", see prisma.config.ts and
+// PrismaService), next to TypeORM's tables in "public" — Prisma Migrate
+// treats anything in its schema it didn't create as drift and offers to
+// reset, so the two migration systems must never share one.
+
+generator client {
+  // The newer generator: plain TypeScript written into the project, instead
+  // of the old `prisma-client-js` output hidden inside node_modules.
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  // Nest compiles to CommonJS; the generator otherwise infers the format
+  // from tsconfig, which is less obvious than saying so.
+  moduleFormat        = "cjs"
+  // Extensionless relative imports in the generated files. The default
+  // (`./enums.js` pointing at enums.ts) is right for tsc but Jest's resolver
+  // can't follow it — fixing it here covers both Jest configs at once.
+  importFileExtension = ""
+}
+
+// No `url` here: Prisma 7 reads the connection for the CLI from
+// prisma.config.ts, and the app passes its own via the pg driver adapter.
+datasource db {
+  provider = "postgresql"
+}
+
+model Song {
+  id          Int      @id @default(autoincrement())
+  title       String
+  // Strings, matching the TypeORM `Song` entity exactly — the point is a
+  // like-for-like comparison, not a remodel.
+  releaseDate String
+  duration    String
+  // Implicit many-to-many: listing the relation on both sides is enough.
+  // Prisma creates and manages the join table itself ("_ArtistToSong"),
+  // where TypeORM needs @ManyToMany + @JoinTable on an owning side.
+  artists     Artist[]
+
+  @@map("songs")
+}
+
+model Artist {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  songs Song[]
+
+  @@map("artists")
+}

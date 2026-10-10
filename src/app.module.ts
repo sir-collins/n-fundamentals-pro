@@ -26,6 +26,7 @@ import { GqlContext } from './common/graphql-context';
 import { cacheControlDirective } from './common/cache-control';
 import responseCachePlugin from '@apollo/server-plugin-response-cache';
 import { envValidationSchema } from './config/env.validation';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -123,6 +124,9 @@ import { envValidationSchema } from './config/env.validation';
     SongsModule,
     AuthModule,
     CommentsModule,
+    // Project 9: Prisma alongside TypeORM, in its own Postgres schema
+    // ("prisma") — see prisma/schema.prisma. No routes use it yet.
+    PrismaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
