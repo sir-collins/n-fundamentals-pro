@@ -2384,3 +2384,59 @@ failed exactly its test. Cleanup held after both broken runs.
 That closes Project 6. Across both sub-steps: 28 new unit tests (unit
 coverage 41.5% → 52.1%) and 24 new E2E tests, covering the security core
 and every REST area that had no tests.
+
+## 2026-10-10 — Making a one-time code actually one-time
+
+Yesterday's E2E suite showed that a 2FA code worked twice within its
+30-second step. `authenticator.check()` only answers "is this the right
+code right now?" and has no memory of what was already used. So the app
+now remembers: each user has a `lastTotpStep`, and a code is accepted
+only if its step is strictly later.
+
+**`checkDelta`, not `check`.** To record a code's step you need to know
+which step it matched. `checkDelta` returns `0` for the current step,
+`-1` for the previous one, or `null`. Step = Unix seconds / 30, plus that
+delta.
+
+**The race is the real bug.** The obvious version (read
+`lastTotpStep`, compare, save) has a gap: two requests carrying the same
+code can both read the old value before either writes, and both get in.
+That's the attack we were closing, just done faster. The fix is to let
+Postgres decide in a single statement: `UPDATE … SET lastTotpStep = step
+WHERE id = … AND (lastTotpStep IS NULL OR lastTotpStep < step)`. Only one
+of two concurrent updates can match, and "affected 1 row" means "you
+won". There's no lock and no extra read. It's a reusable pattern for
+anything that must happen only once. TypeORM expresses it as
+`update({ id, lastTotpStep: Or(IsNull(), LessThan(step)) }, …)`.
+
+**`window: 1`, which was unsafe before and is fine now.** Accepting the
+previous step's code fixes the "typed at :29, arrived at :31" rejection.
+Without replay protection it would have doubled how long a stolen code
+works. With it, each step still works exactly once. The E2E test's
+3-second boundary workaround could go.
+
+**Testing it honestly.** The E2E test logs in 10 times, then sends the
+same fresh code on all 10 tempTokens at once and expects exactly one 200.
+Codes are now single-use, so the test waits for a new 30-second step
+after turning 2FA on (about 20s in practice). Two findings on the way:
+- **`ECONNRESET`.** Given a server that isn't listening, supertest opens
+  a listener per request and *closes it when that request finishes*,
+  pulling the server out from under the other nine. The suite now calls
+  `app.listen(0)` once.
+- **The suites raced each other too.** `npm run test:e2e` ran the REST
+  and GraphQL suites in parallel against one database, and the GraphQL
+  cache test (which counts all songs) saw the REST suite's insert. It
+  was always possible; the new timing made it happen. `--runInBand`
+  fixes it.
+
+The sanity check is where I had to correct myself. Swapping in the naive
+read-then-save version, the race test first seemed to catch it every
+time, but those runs were also hitting the `ECONNRESET` bug. With that
+fixed, it caught the naive version in about 1 run in 3, and no more
+often with 25 racers. Inside one Node process, requests rarely
+interleave in the gap between the read and the write. So the E2E test
+proves the real implementation holds under concurrency, but it can't
+reliably catch a regression to read-then-save. The unit test that pins
+the guarded `WHERE` does that deterministically. The test comment says
+so, rather than claiming more than the test does.
+

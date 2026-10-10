@@ -29,8 +29,8 @@ interface RestError {
 // `stamp` and removed in `afterAll` — including API keys (a plain
 // `userId` column, so nothing cascades) and Mongo comments (no cascades
 // at all).
-// File-wide (jest.setTimeout always is): the 2FA tests' currentCode() may
-// wait up to ~3s for a fresh TOTP step, on top of real HTTP + DB work.
+// File-wide (jest.setTimeout always is): real HTTP + DB work. The one 2FA
+// test that may wait ~30s for a fresh TOTP step sets its own, longer one.
 jest.setTimeout(15_000);
 
 describe('REST API (e2e)', () => {
@@ -77,7 +77,12 @@ describe('REST API (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
-    await app.init();
+    // listen (which runs init itself), not just init: against a server
+    // that isn't listening, supertest opens a listener per request and
+    // closes it when that request ends — under the 2FA race test's
+    // concurrent requests, the first to finish would close the server
+    // under the rest (ECONNRESET). One real listener avoids that.
+    await app.listen(0);
 
     users = app.get(getRepositoryToken(User));
 
@@ -222,17 +227,20 @@ describe('REST API (e2e)', () => {
     // code), so the test reads it back and computes codes with the same
     // library an authenticator app's algorithm matches.
     //
-    // otplib checks with `window: 0` — only the current 30s step counts —
-    // so a code generated in a step's last moments could be rejected once
-    // the request lands in the next step — a rare (sub-1%) but real flake.
-    // If less than 3s remain, wait for the next step first.
-    async function currentCode(): Promise<string> {
-      const remaining = authenticator.timeRemaining();
-      if (remaining < 3) {
+    // Each code works once (replay protection), so a test needing a new
+    // one must wait until the step after the last one spent — up to ~30s.
+    // No boundary juggling needed: the app accepts the previous step too
+    // (`window: 1`), so a code generated at :29 that lands at :31 is fine.
+    const currentStep = () => Math.floor(Date.now() / 1000 / 30);
+    let lastSpentStep = 0;
+
+    async function freshCode(): Promise<string> {
+      while (currentStep() <= lastSpentStep) {
         await new Promise((resolve) =>
-          setTimeout(resolve, remaining * 1000 + 100),
+          setTimeout(resolve, authenticator.timeRemaining() * 1000 + 100),
         );
       }
+      lastSpentStep = currentStep();
       const user = await users.findOneByOrFail({ email: tfaEmail });
       return authenticator.generate(user.twoFactorSecret!);
     }
@@ -271,50 +279,88 @@ describe('REST API (e2e)', () => {
       await http()
         .post('/auth/2fa/turn-on')
         .set('Authorization', `Bearer ${tfaToken}`)
-        .send({ code: await currentCode() })
+        .send({ code: await freshCode() })
         .expect(200);
 
       const user = await users.findOneByOrFail({ email: tfaEmail });
       expect(user.isTwoFactorEnabled).toBe(true);
     });
 
-    it('now withholds the access token at login, then exchanges tempToken + code for one', async () => {
-      const loginRes = await http()
-        .post('/auth/login')
-        .send({ email: tfaEmail, password })
-        .expect(200);
-      const loginBody = loginRes.body as {
-        access_token?: string;
-        twoFactorRequired?: boolean;
-        tempToken?: string;
-      };
-      expect(loginBody.access_token).toBeUndefined();
-      expect(loginBody.twoFactorRequired).toBe(true);
+    it('withholds the access token at login, then accepts each code exactly once', async () => {
+      // Several logins, so several separate tempTokens — the race below is
+      // about the *code*, not a single token being reused.
+      //
+      // What this proves: under real concurrency, the real implementation
+      // lets exactly one through. What it can't promise: catching a
+      // read-then-save regression every run — that bug only shows when two
+      // requests interleave between the read and the write, which happened
+      // in ~1 run in 3 here (and no more often with 25 racers). The
+      // deterministic guard is users.service.spec.ts pinning the
+      // conditional WHERE; this test is the real-database proof.
+      const RACERS = 10;
+      const logins = await Promise.all(
+        Array.from({ length: RACERS }, () =>
+          http()
+            .post('/auth/login')
+            .send({ email: tfaEmail, password })
+            .expect(200),
+        ),
+      );
+      const tempTokens = logins.map((res) => {
+        const body = res.body as {
+          access_token?: string;
+          twoFactorRequired?: boolean;
+          tempToken: string;
+        };
+        expect(body.access_token).toBeUndefined();
+        expect(body.twoFactorRequired).toBe(true);
+        return body.tempToken;
+      });
 
       // A wrong code fails without consuming the tempToken...
       await http()
         .post('/auth/2fa/authenticate')
-        .send({ tempToken: loginBody.tempToken, code: '000000' })
+        .send({ tempToken: tempTokens[0], code: '000000' })
         .expect(400);
 
-      // ...and the right one completes the login.
-      const authRes = await http()
-        .post('/auth/2fa/authenticate')
-        .send({ tempToken: loginBody.tempToken, code: await currentCode() })
-        .expect(200);
-      const { access_token } = authRes.body as { access_token: string };
+      // ...then the same valid code, sent on all of them at the same moment:
+      // exactly one may win. Only a real database can prove this — it's
+      // the conditional UPDATE in UsersService.consumeTotpStep that decides.
+      const code = await freshCode();
+      const raced = await Promise.all(
+        tempTokens.map((tempToken) =>
+          http().post('/auth/2fa/authenticate').send({ tempToken, code }),
+        ),
+      );
+      const winners = raced.filter((res) => res.status === 200);
+      const losers = raced.filter((res) => res.status === 400);
+      expect(winners).toHaveLength(1);
+      expect(losers).toHaveLength(RACERS - 1);
+      for (const loser of losers) {
+        expect((loser.body as { message: string }).message).toMatch(
+          /already been used/,
+        );
+      }
+      const [winner] = winners;
 
+      // A plain replay afterwards is refused too.
+      await http()
+        .post('/auth/2fa/authenticate')
+        .send({ tempToken: tempTokens[0], code })
+        .expect(400);
+
+      const { access_token } = winner.body as { access_token: string };
       const profile = await http()
         .get('/auth/profile')
         .set('Authorization', `Bearer ${access_token}`)
         .expect(200);
       expect(profile.body).toMatchObject({ email: tfaEmail });
-    });
+    }, 45_000);
 
     it('rejects a normal access token used as a tempToken', async () => {
       await http()
         .post('/auth/2fa/authenticate')
-        .send({ tempToken: tfaToken, code: await currentCode() })
+        .send({ tempToken: tfaToken, code: '123456' })
         .expect(401);
     });
   });

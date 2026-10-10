@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ConflictException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { IsNull, LessThan, Or, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 import { User, UserRole } from './entities/user.entity';
@@ -53,6 +53,34 @@ describe('UsersService', () => {
       ).rejects.toThrow(ConflictException);
       expect(hashMock).not.toHaveBeenCalled();
       expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('consumeTotpStep', () => {
+    it('updates only if the step is later than the last spent one', async () => {
+      repository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      expect(await service.consumeTotpStep(1, 100)).toBe(true);
+      // One conditional UPDATE — the guard lives in the WHERE, so Postgres
+      // (not a read-then-compare here) decides who wins a race.
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 1, lastTotpStep: Or(IsNull(), LessThan(100)) },
+        { lastTotpStep: 100 },
+      );
+    });
+
+    it('reports false when no row matched — the step was already spent', async () => {
+      repository.update.mockResolvedValue({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      expect(await service.consumeTotpStep(1, 100)).toBe(false);
     });
   });
 });

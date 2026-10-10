@@ -583,6 +583,32 @@ closed rather than just asserted to be.
       after those broken runs too. `npm run test:e2e` 42/3; `npm test`
       94/14; `tsc`, eslint and Prettier clean. Unit coverage stays
       52.1% (E2E isn't counted). This completes Project 6.
+- [x] Follow-up: **2FA replay protection** (both TOTP findings above,
+      fixed). New nullable `user.lastTotpStep` column, via a generated
+      migration (`AddLastTotpStep`, one `ADD COLUMN`; `schema:log`
+      clean; Railway runs it on deploy). `AuthService` now uses
+      `checkDelta` to learn *which* step a code belongs to, then spends
+      it through `UsersService.consumeTotpStep`: **one conditional
+      UPDATE** (`WHERE id = … AND (lastTotpStep IS NULL OR lastTotpStep
+      < step)`), accepted only if it affected a row, so two simultaneous
+      requests can't both win. Applies to login *and* turning 2FA on (a
+      code works once, anywhere). A reused code → 400 "already been
+      used". Also `window: 1` (accept the previous step: RFC 6238's
+      network-delay tolerance), safe now that each step works once;
+      the E2E 3s-boundary workaround is gone. Tests: unit cases for
+      wrong code / spent step / delta −1 / the guarded WHERE; E2E sends
+      one code on 10 tempTokens at once → exactly one 200, nine 400s,
+      then a sequential replay → 400 (the test waits up to ~30s for a
+      fresh step). Fixed along the way: supertest `ECONNRESET` under
+      concurrent requests (REST suite now `app.listen(0)`), and
+      `test:e2e` now `--runInBand` (both suites share one real DB; the
+      GraphQL cache test's song count was disturbed by the REST suite
+      running in parallel). Sanity: skipping the spend failed 5 unit +
+      the race E2E; dropping `window: 1` failed its unit test; a naive
+      read-then-save was caught by the race E2E only ~1 run in 3 —
+      the unit test on the WHERE is the deterministic guard.
+      `npm test` 100/14; `npm run test:e2e` 42/3 (3 clean runs); `tsc`,
+      eslint and Prettier clean.
 
 ## Project 7 (Branch A): Real-Time Layer — ✅ Done
 

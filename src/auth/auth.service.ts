@@ -15,6 +15,16 @@ import { User } from '../users/entities/user.entity';
 // tell which account this entry belongs to.
 const TWO_FACTOR_APP_NAME = 'NFundamentalsPro';
 
+// TOTP codes belong to 30-second time steps (otplib's default `step`).
+const TOTP_STEP_SECONDS = 30;
+
+// Also accept the previous step's code (otplib defaults to `window: 0`),
+// so a code typed at :29 that arrives at :31 isn't rejected — the network
+// delay tolerance RFC 6238 recommends. Only safe because of the replay
+// protection below: each step's code still works exactly once. This sets
+// the shared `authenticator` singleton's options, app-wide.
+authenticator.options = { window: 1 };
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -133,10 +143,12 @@ export class AuthService {
    * app against their stored secret. Only flips `isTwoFactorEnabled` once
    * this succeeds — proves the QR code was actually scanned correctly
    * before 2FA starts being enforced anywhere.
+   * The code is spent here too (see `verifyAndSpendCode`), so the one
+   * typed during setup can't be replayed to log in moments later.
    * @throws BadRequestException if no secret was generated yet, or the
-   *   code doesn't match — the caller's identity isn't in question here
-   *   (they're already authenticated), just whether this specific code is
-   *   right.
+   *   code doesn't match or was already used — the caller's identity isn't
+   *   in question here (they're already authenticated), just whether this
+   *   specific code is right.
    */
   async turnOnTwoFactor(userId: number, code: string): Promise<void> {
     const user = await this.usersService.findById(userId);
@@ -147,12 +159,7 @@ export class AuthService {
       );
     }
 
-    const isValid = authenticator.check(code, user.twoFactorSecret);
-
-    if (!isValid) {
-      throw new BadRequestException('Invalid two-factor code');
-    }
-
+    await this.verifyAndSpendCode(userId, user.twoFactorSecret, code);
     await this.usersService.enableTwoFactor(userId);
   }
 
@@ -164,7 +171,8 @@ export class AuthService {
    * the password check already succeeded for this specific user.
    * @throws UnauthorizedException if `tempToken` is missing, expired, or
    *   isn't actually a pending-2FA token.
-   * @throws BadRequestException if `code` doesn't match the user's secret.
+   * @throws BadRequestException if `code` doesn't match the user's secret,
+   *   or was already used.
    */
   async authenticateTwoFactor(
     tempToken: string,
@@ -188,11 +196,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid two-factor session');
     }
 
-    const isValid = authenticator.check(code, user.twoFactorSecret);
-
-    if (!isValid) {
-      throw new BadRequestException('Invalid two-factor code');
-    }
+    await this.verifyAndSpendCode(user.id, user.twoFactorSecret, code);
 
     return {
       access_token: this.jwtService.sign({
@@ -201,5 +205,37 @@ export class AuthService {
         role: user.role,
       }),
     };
+  }
+
+  /**
+   * Check a TOTP code and spend it, so it can never be accepted again.
+   *
+   * `checkDelta` (unlike `check`) says *which* step the code matched — `0`
+   * for the current one, `-1` for the previous (allowed by `window: 1`) —
+   * so the exact step the code belongs to can be recorded.
+   * @throws BadRequestException if the code doesn't match, or its step
+   *   (or a later one) was already spent — a distinct message, since it
+   *   tells a real user what to do and reveals nothing an attacker who
+   *   already holds the code doesn't know.
+   */
+  private async verifyAndSpendCode(
+    userId: number,
+    secret: string,
+    code: string,
+  ): Promise<void> {
+    const delta = authenticator.checkDelta(code, secret);
+
+    if (delta === null) {
+      throw new BadRequestException('Invalid two-factor code');
+    }
+
+    const step = Math.floor(Date.now() / 1000 / TOTP_STEP_SECONDS) + delta;
+    const spent = await this.usersService.consumeTotpStep(userId, step);
+
+    if (!spent) {
+      throw new BadRequestException(
+        'This two-factor code has already been used — wait for the next one',
+      );
+    }
   }
 }

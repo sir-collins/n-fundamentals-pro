@@ -1,5 +1,12 @@
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -19,7 +26,7 @@ jest.mock('otplib', () => ({
   authenticator: {
     generateSecret: jest.fn(),
     keyuri: jest.fn(),
-    check: jest.fn(),
+    checkDelta: jest.fn(),
   },
 }));
 
@@ -32,8 +39,16 @@ const toDataUrlMock = qrcode.toDataURL as unknown as jest.MockedFunction<
 const otp = authenticator as unknown as {
   generateSecret: jest.MockedFunction<() => string>;
   keyuri: jest.MockedFunction<() => string>;
-  check: jest.MockedFunction<(code: string, secret: string) => boolean>;
+  checkDelta: jest.MockedFunction<
+    (code: string, secret: string) => number | null
+  >;
+  options: unknown;
 };
+
+// A fixed clock for the 2FA tests, so the TOTP step AuthService records is
+// predictable: 1_791_582_000 s / 30 = step 59_719_400 exactly.
+const NOW_MS = 1_791_582_000_000;
+const NOW_STEP = 59_719_400;
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -62,6 +77,8 @@ describe('AuthService', () => {
     // resolved value here.
     usersService.setTwoFactorSecret.mockResolvedValue(undefined);
     usersService.enableTwoFactor.mockResolvedValue(undefined);
+    // Default: the step hasn't been spent yet. Replay tests override it.
+    usersService.consumeTotpStep.mockResolvedValue(true);
     service = new AuthService(usersService, jwtService);
   });
 
@@ -146,7 +163,20 @@ describe('AuthService', () => {
     });
   });
 
+  // Set once at import by auth.service.ts, on the (mocked) shared
+  // authenticator — the replay protection is what makes this safe.
+  it('accepts the previous TOTP step too (window: 1)', () => {
+    expect(otp.options).toEqual({ window: 1 });
+  });
+
   describe('turnOnTwoFactor', () => {
+    beforeEach(() => {
+      jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('refuses when no secret has been generated', async () => {
       usersService.findById.mockResolvedValue(user);
 
@@ -160,10 +190,25 @@ describe('AuthService', () => {
         ...user,
         twoFactorSecret: 'SECRET',
       });
-      otp.check.mockReturnValue(false);
+      otp.checkDelta.mockReturnValue(null);
 
       await expect(service.turnOnTwoFactor(1, '000000')).rejects.toThrow(
         BadRequestException,
+      );
+      expect(usersService.consumeTotpStep).not.toHaveBeenCalled();
+      expect(usersService.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('refuses an already-used code and leaves 2FA off', async () => {
+      usersService.findById.mockResolvedValue({
+        ...user,
+        twoFactorSecret: 'SECRET',
+      });
+      otp.checkDelta.mockReturnValue(0);
+      usersService.consumeTotpStep.mockResolvedValue(false);
+
+      await expect(service.turnOnTwoFactor(1, '123456')).rejects.toThrow(
+        'already been used',
       );
       expect(usersService.enableTwoFactor).not.toHaveBeenCalled();
     });
@@ -173,11 +218,13 @@ describe('AuthService', () => {
         ...user,
         twoFactorSecret: 'SECRET',
       });
-      otp.check.mockReturnValue(true);
+      otp.checkDelta.mockReturnValue(0);
 
       await service.turnOnTwoFactor(1, '123456');
 
-      expect(otp.check).toHaveBeenCalledWith('123456', 'SECRET');
+      expect(otp.checkDelta).toHaveBeenCalledWith('123456', 'SECRET');
+      // The setup code is spent too, so it can't be replayed at login.
+      expect(usersService.consumeTotpStep).toHaveBeenCalledWith(1, NOW_STEP);
       expect(usersService.enableTwoFactor).toHaveBeenCalledWith(1);
     });
   });
@@ -190,6 +237,16 @@ describe('AuthService', () => {
     } as User;
     const pendingToken = () =>
       jwtService.sign({ sub: 1, twoFactorPending: true }, { expiresIn: '5m' });
+
+    // Pinned for the whole block — JwtService reads Date.now too, so the
+    // tokens stay consistent with the clock (the expired-token test
+    // computes its `exp` from the same pinned value).
+    beforeEach(() => {
+      jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
 
     it('rejects a token that is not a valid JWT', async () => {
       await expect(
@@ -229,16 +286,39 @@ describe('AuthService', () => {
 
     it('rejects a wrong code', async () => {
       usersService.findById.mockResolvedValue(userWith2fa);
-      otp.check.mockReturnValue(false);
+      otp.checkDelta.mockReturnValue(null);
 
       await expect(
         service.authenticateTwoFactor(pendingToken(), '000000'),
       ).rejects.toThrow(BadRequestException);
+      expect(usersService.consumeTotpStep).not.toHaveBeenCalled();
+    });
+
+    it('rejects a code whose step was already spent — no token issued', async () => {
+      usersService.findById.mockResolvedValue(userWith2fa);
+      otp.checkDelta.mockReturnValue(0);
+      usersService.consumeTotpStep.mockResolvedValue(false);
+
+      await expect(
+        service.authenticateTwoFactor(pendingToken(), '123456'),
+      ).rejects.toThrow('already been used');
+    });
+
+    it("records the previous step for a code from it (window: 1's delta -1)", async () => {
+      usersService.findById.mockResolvedValue(userWith2fa);
+      otp.checkDelta.mockReturnValue(-1);
+
+      await service.authenticateTwoFactor(pendingToken(), '123456');
+
+      expect(usersService.consumeTotpStep).toHaveBeenCalledWith(
+        1,
+        NOW_STEP - 1,
+      );
     });
 
     it('exchanges a valid tempToken + code for a real access token', async () => {
       usersService.findById.mockResolvedValue(userWith2fa);
-      otp.check.mockReturnValue(true);
+      otp.checkDelta.mockReturnValue(0);
 
       const { access_token } = await service.authenticateTwoFactor(
         pendingToken(),
@@ -250,7 +330,8 @@ describe('AuthService', () => {
         email: 'ada@example.com',
         role: UserRole.USER,
       });
-      expect(otp.check).toHaveBeenCalledWith('123456', 'SECRET');
+      expect(otp.checkDelta).toHaveBeenCalledWith('123456', 'SECRET');
+      expect(usersService.consumeTotpStep).toHaveBeenCalledWith(1, NOW_STEP);
     });
   });
 });
