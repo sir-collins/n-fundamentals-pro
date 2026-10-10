@@ -1172,6 +1172,37 @@ Completes all three roadmap bullets for Project 7.
       known limit of name matching (a real app would confirm and store
       the Deezer id once).
 
-## Project 9 (Branch C): Rebuild Data Layer with Prisma — Not started
+## Project 9 (Branch C): Rebuild Data Layer with Prisma — 🚧 In progress
+
+- [x] Setup, models & migrations, generate client — Prisma **7.10.0
+      pinned exactly** (`prisma@latest` on npm was the 8.0.0-rc.22
+      release candidate while `@prisma/client@latest` was 7.10.0; a
+      plain install would have mixed them). Runs **alongside TypeORM** in
+      its own Postgres schema, `prisma` — in `public`, Prisma Migrate
+      would read TypeORM's tables as drift and offer a reset.
+      `prisma/schema.prisma`: `Song` and `Artist` mirroring Project 2,
+      implicit many-to-many (Prisma owns the `_ArtistToSong` join table,
+      columns `A`/`B`). `prisma.config.ts` builds the CLI's URL from the
+      existing `DB_*` vars + `?schema=prisma`; first migration `init`
+      applied (SQL reviewed: 3 tables, cascading FKs). Client generated
+      to `src/generated/prisma` (gitignored; `postinstall: prisma
+      generate` so Railway's build still has it); `moduleFormat = "cjs"`
+      and `importFileExtension = ""` so Nest and Jest can load it.
+      `PrismaService extends PrismaClient` with the `pg` driver adapter
+      (`schema: 'prisma'` as an adapter option), connecting/disconnecting
+      on Nest lifecycle hooks, exported by `PrismaModule`. Verified: real
+      counts (0/0) through the service; tables only in `prisma`; TypeORM
+      `schema:log` clean and `prisma migrate status` up to date; the
+      built app boots (`dist/main.js` layout unchanged — `prisma.config.ts`
+      excluded from the build); wrong schema → "table `nope.songs` does
+      not exist". E2E needed a small CommonJS transformer for the
+      generated client (see journal). `npm test` 102/15; `npm run
+      test:e2e` 42/3; `tsc`, eslint, Prettier clean. Local-only: no
+      `migrate deploy` on Railway yet.
+- [ ] CRUD (Create/Find/Update/Delete) + pagination
+- [ ] All three relation types, Prisma-style
+- [ ] Bulk/batch operations
+- [ ] Transactions: nested writes + interactive transactions
+- [ ] Tests + a Prisma vs TypeORM comparison write-up
 
 ## Project 10: Capstone — Advanced Feature Grab Bag — Not started

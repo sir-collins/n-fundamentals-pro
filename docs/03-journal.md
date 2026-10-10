@@ -2440,3 +2440,64 @@ reliably catch a regression to read-then-save. The unit test that pins
 the guarded `WHERE` does that deterministically. The test comment says
 so, rather than claiming more than the test does.
 
+## 2026-10-10 — Project 9 begins: Prisma next to TypeORM
+
+**Pin the version first.** On npm, `prisma`'s `latest` tag pointed at a
+two-day-old 8.0 release candidate while `@prisma/client`'s pointed at
+7.10.0. A plain `npm i prisma @prisma/client` would have installed a CLI
+and a client from different major versions. Both are pinned to 7.10.0.
+(Also new: this npm (11.19) blocks dependencies' install scripts unless
+they're allowed. Prisma's engine postinstall was skipped, but the
+migration engine binary already ships in the package, so nothing broke.)
+
+**Same database, separate schema.** Prisma Migrate assumes it owns its
+schema: anything there it didn't create is "drift", and its fix is to
+reset. TypeORM's tables live in `public`, so Prisma gets `prisma`. The
+CLI gets there via `?schema=prisma` in `prisma.config.ts`. The app gets
+there via the `pg` adapter's `schema` option. One surprise:
+`current_schema()` still reports `public`, because the adapter writes the
+schema name into every generated query rather than changing the
+connection. So raw SQL through `$queryRaw` would land in `public` unless
+it names the schema. Breaking the setting on purpose proved the point
+("table `nope.songs` does not exist").
+
+**First impressions of schema-first.** One `schema.prisma` file defines
+everything, and the TypeScript types are generated from it. That's the
+reverse of TypeORM, where decorated classes are the source. Many-to-many
+is just `Artist[]` on one side and `Song[]` on the other; there's no
+owning side and no `@JoinTable`. Prisma owns the join table and names its
+columns `A` and `B` (models in alphabetical order). It's convenient, but
+the table is entirely Prisma's.
+
+**Prisma 7 changes worth knowing:**
+- The database URL moved out of the schema into `prisma.config.ts`.
+- `migrate dev` no longer runs `generate` for you.
+- The client is generated into the project rather than node_modules, so
+  it's gitignored and rebuilt by a `postinstall` script.
+- A root-level `prisma.config.ts` would have changed the build layout
+  (`dist/src/main.js` instead of `dist/main.js`, breaking `start:prod`
+  on Railway), so it's excluded from `tsconfig.build.json`. The build
+  was run to confirm.
+
+**The Jest fight.** The generated client's own imports used `.js` paths
+pointing at `.ts` files. `tsc` accepts that; Jest's resolver doesn't.
+`importFileExtension = ""` fixed it at the source. Then every E2E test
+failed: Prisma 7 loads its query compiler (WebAssembly) with a dynamic
+`import()`, and Jest's `vm` sandbox refuses those without
+`--experimental-vm-modules`. That flag fixed Prisma but broke
+`@nestjs/mongoose`, which Jest then treated as ESM. A ts-jest override
+looked like the narrow fix, and calling ts-jest directly showed it
+emitting `require()`. Inside Jest, the cached output still had `import()`.
+Rather than dig further into ts-jest's internals, a ten-line transformer
+(`test/prisma-cjs-transformer.js`) compiles only `src/generated` as
+CommonJS with `ts.transpileModule`, and everything else is unchanged.
+A first, failed run also hung Jest: a failed Prisma startup left the
+pool open. Once startup works, Jest exits cleanly.
+
+The transformer itself then showed an ESLint error in the editor, which
+my CLI lint missed because its glob only covered `*.ts`. The config runs
+type-aware rules on every file, and a `.js` file outside any tsconfig
+can't even be parsed that way. `**/*.js` now uses typescript-eslint's
+`disableTypeChecked` preset and allows `require()` (it's CommonJS, which
+is how Jest loads transformers). Lesson: lint what the editor lints.
+
