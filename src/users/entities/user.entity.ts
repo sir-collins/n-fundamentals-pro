@@ -60,4 +60,11 @@ export class User {
 
   @Column({ default: false })
   isTwoFactorEnabled!: boolean;
+
+  // The TOTP time step (Unix seconds / 30) of the last code this user
+  // successfully spent — replay protection: a code is only accepted if its
+  // step is strictly later, so each code works once. `null` until the
+  // first one is used. Also undecorated for GraphQL, like the fields above.
+  @Column({ type: 'integer', nullable: true })
+  lastTotpStep!: number | null;
 }

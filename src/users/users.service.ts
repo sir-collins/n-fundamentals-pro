@@ -1,6 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, LessThan, Or, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from './entities/user.entity';
 
@@ -58,5 +58,24 @@ export class UsersService {
   /** Mark 2FA as active, once the user has confirmed their setup. */
   async enableTwoFactor(id: number): Promise<void> {
     await this.usersRepository.update(id, { isTwoFactorEnabled: true });
+  }
+
+  /**
+   * Spend a TOTP step for a user: record `step` as their last-used one,
+   * but only if it's strictly later than whatever was spent before.
+   *
+   * Deliberately one conditional UPDATE, not "read lastTotpStep, compare,
+   * then save" — with read-then-save, two requests carrying the same code
+   * can both read the old value before either writes, and both succeed.
+   * Postgres lets only one of two concurrent UPDATEs match this WHERE.
+   * @returns `true` if the step was recorded (the code may be accepted),
+   *   `false` if it — or a later one — was already spent.
+   */
+  async consumeTotpStep(id: number, step: number): Promise<boolean> {
+    const result = await this.usersRepository.update(
+      { id, lastTotpStep: Or(IsNull(), LessThan(step)) },
+      { lastTotpStep: step },
+    );
+    return result.affected === 1;
   }
 }
