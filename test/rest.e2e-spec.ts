@@ -200,6 +200,19 @@ describe('REST API (e2e)', () => {
       expect(updated.body).toMatchObject({ id: songId, duration: '04:00' });
     });
 
+    it('validates the update body too', async () => {
+      // Regression: the body was typed `Partial<CreateSongDto>`, which is
+      // erased at runtime, so nothing was validated and this was saved.
+      const res = await http()
+        .put(`/songs/${songId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ duration: 'banana' })
+        .expect(400);
+
+      // The rule that failed, not just any 400 (a bad id is one too).
+      expect(String((res.body as RestError).message)).toContain('duration');
+    });
+
     it('lets an admin delete a song, after which it is gone', async () => {
       const created = await http()
         .post('/songs')

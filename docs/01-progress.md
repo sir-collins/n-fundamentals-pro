@@ -1199,7 +1199,21 @@ Completes all three roadmap bullets for Project 7.
       generated client (see journal). `npm test` 102/15; `npm run
       test:e2e` 42/3; `tsc`, eslint, Prettier clean. Local-only: no
       `migrate deploy` on Railway yet.
-- [ ] CRUD (Create/Find/Update/Delete) + pagination
+- [x] CRUD (Create/Find/Update/Delete) + pagination — `/prisma/songs`
+      (`src/prisma-songs/`), a mirror of `/songs`: same DTOs, guards,
+      status codes and messages. Artists via nested `connectOrCreate`
+      (no `ArtistsService`); update is one query, `set: []` +
+      `connectOrCreate` replacing artists; Prisma's `P2025` (missing
+      row) translated to `null`/`false` in the service; `findMany` +
+      `count` (no `findAndCount`) with `orderBy: { id: 'asc' }` for
+      stable pages. Swagger reuses the TypeORM `Song` class (Prisma's
+      types have no runtime presence). **Fixed on `/songs` too:** the
+      update body was `Partial<CreateSongDto>`, which validated nothing
+      at runtime — both routes now take `UpdateSongInput`, with
+      `@ApiBody` so Swagger still shows the fields. Sanity breaks (no
+      `set: []`; no `P2025` catch; `Partial<>` back) each failed the
+      right tests. `npm test` 119/17; `npm run test:e2e` 57/4; `tsc`,
+      eslint, Prettier, build clean.
 - [ ] All three relation types, Prisma-style
 - [ ] Bulk/batch operations
 - [ ] Transactions: nested writes + interactive transactions

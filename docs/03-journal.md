@@ -2501,3 +2501,62 @@ can't even be parsed that way. `**/*.js` now uses typescript-eslint's
 `disableTypeChecked` preset and allows `require()` (it's CommonJS, which
 is how Jest loads transformers). Lesson: lint what the editor lints.
 
+
+## 2026-10-22 — The same CRUD, through Prisma
+
+Project 9, sub-step 2. A second songs REST API at `/prisma/songs`,
+deliberately the same as `/songs` in every way a client can see: the same
+DTOs, guards, status codes and error messages. Only the service underneath
+changed, so `PrismaSongsService` and `SongsService` can be read side by side.
+
+**Artist lookup disappears into the query.** TypeORM needs
+`ArtistsService.findOrCreateMany`: find the existing names, work out which
+are new, insert those, then save the song. Prisma does it as a nested write:
+`artists: { connectOrCreate: [{ where: { name }, create: { name } }] }`
+inside `song.create`. So there's no artists service at all. One thing still
+carries over: duplicate names have to be removed first, or two entries try
+to create the same artist and the unique constraint fails.
+
+**Update is one query.** TypeORM loads the song, copies the fields onto it,
+then saves it. Prisma's `update` writes only the supplied fields. Replacing
+the artists fits in the same call: `{ set: [], connectOrCreate: [...] }`.
+`set: []` clears the existing links first. Without it, `connectOrCreate`
+only *adds*. Removing it was the first sanity break, and the
+artists-replace tests (unit and E2E) failed.
+
+**Missing rows throw.** Prisma's `update` and `delete` throw `P2025` when
+the row doesn't exist, where TypeORM returns `null` / `affected: 0`. The
+service catches exactly that code and returns `null`/`false`, so the
+controller keeps the same checks as `SongsController` and nothing above the
+service knows Prisma error codes. Removing the catch (second sanity break)
+turned the missing-id PUT/DELETE into 500s, and the 404 tests failed.
+
+**No `findAndCount`.** The page and the total are two queries
+(`findMany` and `count`), run together with `Promise.all`. A write landing
+between them could make them disagree, which is what `$transaction([...])`
+is for (sub-step 5). I also added `orderBy: { id: 'asc' }`. The TypeORM
+version has no ordering, so Postgres may return rows in any order and
+pages can overlap or skip rows. Prisma doesn't protect against that either.
+
+**The cost of runtime-less types.** Prisma's generated `Song` is a
+TypeScript type that vanishes at compile time, so it can't carry
+`@ApiProperty()`. Swagger documents the Prisma routes with the TypeORM
+`Song` class instead (the JSON is identical). It's the flip side of
+schema-first: one source of truth for the database, but nothing to hang
+decorators on.
+
+**A bug found along the way, in the old code.** `PUT /songs/:id` took
+`@Body() body: Partial<CreateSongDto>`. `Partial<>` exists only for
+TypeScript, so at runtime `ValidationPipe` saw a plain `Object` and checked
+nothing: `{"duration":"banana"}` was saved as-is. Both routes now take
+`UpdateSongInput`, which GraphQL already used. Its `PartialType` copies
+the validation rules and makes each field optional. It doesn't copy
+`@ApiProperty`, though: Swagger showed the body as an empty object until
+`@ApiBody({ type: CreateSongDto })` pointed it at the full DTO.
+
+The regression test had its own lesson. When run on its own with `-t`, it
+"passed" against the broken code: the create test was skipped, so the id
+was `undefined` and `ParseIntPipe` returned a 400. That's the right status
+for the wrong reason. Both banana tests now also check that the error
+message names `duration`, and with that the third sanity break failed as it
+should.
