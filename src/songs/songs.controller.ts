@@ -18,6 +18,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiExtraModels,
   ApiOperation,
   ApiResponse,
@@ -27,6 +28,7 @@ import {
 import { SongsService, Paginated } from './songs.service';
 import { CreateSongDto } from './dto/create-song-dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { UpdateSongInput } from './dto/update-song.input';
 import { Song } from './entities/song.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -141,8 +143,12 @@ export class SongsController {
     summary:
       'Update a song by id. Only the supplied fields are changed. Requires an authenticated admin.',
   })
+  // UpdateSongInput's PartialType (from @nestjs/graphql) copies the
+  // validation rules but not @ApiProperty, so Swagger is pointed at the
+  // full DTO instead.
+  @ApiBody({ type: CreateSongDto, description: 'Any subset of these fields.' })
   @ApiResponse({ status: 200, description: 'The updated song.', type: Song })
-  @ApiResponse({ status: 400, description: 'Empty update payload.' })
+  @ApiResponse({ status: 400, description: 'Empty or invalid payload.' })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({ status: 404, description: 'No song exists with this id.' })
@@ -152,7 +158,10 @@ export class SongsController {
   @HttpCode(HttpStatus.OK)
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: Partial<CreateSongDto>,
+    // A real class, not TypeScript's `Partial<CreateSongDto>`: that type is
+    // erased at runtime, so ValidationPipe saw a plain Object and checked
+    // nothing — `{"duration":"banana"}` used to be saved as-is.
+    @Body() body: UpdateSongInput,
   ): Promise<Song> {
     try {
       // An empty body would otherwise silently no-op — reject it explicitly
