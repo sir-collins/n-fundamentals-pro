@@ -39,14 +39,52 @@ model Song {
   // Prisma creates and manages the join table itself ("_ArtistToSong"),
   // where TypeORM needs @ManyToMany + @JoinTable on an owning side.
   artists     Artist[]
+  // One-to-one, the virtual side: no column in "songs". Optional (`?`),
+  // since a song may have no lyrics yet. Compare TypeORM's @OneToOne on
+  // both entities, with @JoinColumn marking the side that holds the key.
+  lyrics      Lyrics?
 
   @@map("songs")
 }
 
 model Artist {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
-  songs Song[]
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  songs  Song[]
+  // One-to-many, the virtual side: a list with no column behind it. The
+  // real foreign key is `Album.artistId` (TypeORM: @OneToMany here,
+  // @ManyToOne on Album).
+  albums Album[]
 
   @@map("artists")
+}
+
+model Album {
+  id          Int    @id @default(autoincrement())
+  title       String
+  // A string, like Song.releaseDate.
+  releaseDate String
+  // The side that owns the relation: a real column plus `@relation`
+  // naming which local field points at which remote one. No `onDelete`,
+  // so a required relation gets Prisma's default, Restrict — an artist
+  // who still has albums can't be deleted.
+  artistId    Int
+  artist      Artist @relation(fields: [artistId], references: [id])
+
+  // Postgres indexes the referenced key (artists.id), not the referencing
+  // column, so "albums of artist X" would scan the table without this.
+  @@index([artistId])
+  @@map("albums")
+}
+
+model Lyrics {
+  id     Int    @id @default(autoincrement())
+  text   String
+  // `@unique` is the whole difference between one-to-one and one-to-many:
+  // the database itself allows at most one lyrics row per song.
+  songId Int    @unique
+  // Lyrics mean nothing without their song: deleting the song deletes them.
+  song   Song   @relation(fields: [songId], references: [id], onDelete: Cascade)
+
+  @@map("lyrics")
 }

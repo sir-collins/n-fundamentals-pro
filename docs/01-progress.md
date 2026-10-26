@@ -1214,7 +1214,25 @@ Completes all three roadmap bullets for Project 7.
       `set: []`; no `P2025` catch; `Partial<>` back) each failed the
       right tests. `npm test` 119/17; `npm run test:e2e` 57/4; `tsc`,
       eslint, Prettier, build clean.
-- [ ] All three relation types, Prisma-style
+- [x] All three relation types, Prisma-style — the app only ever had
+      many-to-many (Song ↔ Artist), so this added the other two, in
+      Prisma only: **Artist → Albums** (one-to-many, `albums.artistId`
+      FK + index, default `Restrict` on delete) and **Song → Lyrics**
+      (one-to-one = a `@unique` `lyrics.songId` FK, `onDelete:
+      Cascade`). Second migration `albums_and_lyrics` (SQL reviewed:
+      additive only). `src/prisma-relations/`: `GET /prisma/artists/:id`
+      (albums + `_count.songs` in one query, type derived with
+      `Prisma.ArtistGetPayload`), `POST /prisma/artists/:id/albums`
+      (`connect`), `GET`/`PUT /prisma/songs/:id/lyrics` (`upsert`);
+      writes admin-only; `/prisma/songs` responses unchanged. A missing
+      `connect` target is `P2025` (checked against the real DB, not
+      `P2003`), so `isNotFound` moved to `src/prisma/prisma-errors.ts`
+      and is shared. Sanity: no catch → 2 unit + 2 E2E fail; no
+      `@unique` → Prisma rejects the schema (P1012); no `Cascade` →
+      diff shows `ON DELETE RESTRICT` (checked with `--create-only`,
+      not applied). `npm test` 136/19; `npm run test:e2e` 70/5; `tsc`,
+      eslint, Prettier, build clean. Still local-only (no `migrate
+      deploy` on Railway).
 - [ ] Bulk/batch operations
 - [ ] Transactions: nested writes + interactive transactions
 - [ ] Tests + a Prisma vs TypeORM comparison write-up
