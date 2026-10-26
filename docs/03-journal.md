@@ -2560,3 +2560,86 @@ was `undefined` and `ParseIntPipe` returned a 400. That's the right status
 for the wrong reason. Both banana tests now also check that the error
 message names `duration`, and with that the third sanity break failed as it
 should.
+
+## 2026-10-26 — Relations, Prisma-style
+
+Project 2 ticked "relationships" with a single many-to-many (Song ↔ Artist).
+This step added the two types the app never had, in Prisma only: an artist
+has many **albums**, and a song has at most one set of **lyrics**.
+
+**A relation has two halves, and only one is real.** In
+`schema.prisma`, `Album` holds the real column (`artistId`) plus
+`@relation(fields: [artistId], references: [id])`. `Artist.albums Album[]`
+has no column behind it: it exists so queries can go that direction. TypeORM
+splits the same idea across `@ManyToOne` on one class and `@OneToMany` on
+the other. Prisma keeps both in one file, and `prisma format` won't let one
+side exist without the other.
+
+**One-to-one is one-to-many plus `@unique`.** `Lyrics.songId` is an
+ordinary foreign key. Marking it `@unique` is what turns "many lyrics per
+song" into "at most one", and the database enforces it (an insert that
+bypasses `upsert` fails with `P2002`; there's an E2E test for it).
+`Song.lyrics` becomes `Lyrics?` instead of `Lyrics[]`. The first sanity break
+removed the `@unique`, and Prisma refused the schema outright: "A one-to-one
+relation must use unique fields on the defining side". TypeORM would have
+let me write `@OneToOne` and still enforce it, but you have to remember
+`@JoinColumn`.
+
+**Delete behaviour lives in the schema.** Lyrics use `onDelete: Cascade`,
+so deleting a song deletes its lyrics. Albums have no `onDelete`, so a
+required relation gets Prisma's default, `Restrict`: an artist with albums
+can't be deleted (`P2003`, tested directly since there's no artist-delete
+route). Removing `Cascade` (second break) changed the migration diff to
+`ON DELETE RESTRICT`. I checked it with `--create-only` and didn't apply
+it, because undoing an applied migration means hand-written DDL or a reset.
+
+**The second migration.** `migrate dev --create-only` wrote the SQL
+without running it: two tables, a unique index on `lyrics.songId`, a plain
+index on `albums.artistId`, and the two foreign keys. I read it, then
+applied it. There's no `down`. TypeORM migrations come with `up`/`down`;
+Prisma's way back is a new migration. One Prisma 7 surprise: `migrate dev`
+no longer regenerates the client, so the new models weren't there until
+`prisma generate`. My editor's ESLint still showed the old client
+afterwards, until its TS server restarted.
+
+**Prisma-style queries for relations:**
+- `connect: { id }` links a new album to its artist. Writing
+  `artistId` directly also works, but `connect` is what nests inside
+  other writes.
+- `upsert` fits one-to-one naturally: create the lyrics the first time,
+  replace the text after that, in one call. In TypeORM it's a find
+  followed by an insert or an update.
+- A nested `include` loads the artist, their albums (ordered) and
+  `_count: { select: { songs: true } }` in one query, without loading the
+  songs. `Prisma.ArtistGetPayload<{ include: typeof artistDetail }>`
+  derives the return type from that `include`, so the two can't drift.
+
+**An assumption corrected.** I expected an album for a missing artist to
+fail with the database's foreign-key error, `P2003`. I tested it against
+the real database, and Prisma checks the connected record itself before
+inserting, so it throws `P2025`, the same "record not found" code as a
+missing `update`. The songs service's `isNotFound` therefore covers it, and
+it moved into `src/prisma/prisma-errors.ts` for both services to share.
+
+**The many-to-many I left alone.** `Song.artists` / `Artist.songs` is
+*implicit*: Prisma owns `_ArtistToSong` (columns `A`/`B`), and you never
+see it as a model. The *explicit* form makes the join table a model you
+write yourself:
+
+```prisma
+model SongArtist {
+  songId   Int
+  artistId Int
+  role     String @default("main")   // the reason to go explicit
+  song     Song   @relation(fields: [songId], references: [id], onDelete: Cascade)
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  @@id([songId, artistId])
+}
+```
+
+`Song.artists` would become `SongArtist[]`. You'd use it as soon as the link
+needs its own data (featured vs main artist, the position on the track).
+The price is an extra hop in every query (`include: { artists: { include:
+{ artist: true } } }`). Implicit is TypeORM's `@ManyToMany` + `@JoinTable`;
+explicit is TypeORM's "two `@ManyToOne`s on a join entity".
+

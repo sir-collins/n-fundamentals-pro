@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '../generated/prisma/client';
 import type { Artist, Song } from '../generated/prisma/client';
+import { isNotFound } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSongDto } from '../songs/dto/create-song-dto';
 import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
@@ -120,16 +120,4 @@ function toArtists(names: string[]) {
     where: { name },
     create: { name },
   }));
-}
-
-/**
- * Prisma's `update`/`delete` throw P2025 for a missing row, where
- * TypeORM's `findOne`/`delete` report it as `null`/`affected: 0`.
- * Translated here so nothing above the service knows Prisma error codes.
- */
-function isNotFound(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2025'
-  );
 }
