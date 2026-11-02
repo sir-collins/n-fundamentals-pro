@@ -2643,3 +2643,88 @@ The price is an extra hop in every query (`include: { artists: { include:
 { artist: true } } }`). Implicit is TypeORM's `@ManyToMany` + `@JoinTable`;
 explicit is TypeORM's "two `@ManyToOne`s on a join entity".
 
+## 2026-11-02 — Bulk operations: one statement, and what it can't do
+
+Every Prisma write so far handled one row. `createMany`, `updateMany` and
+`deleteMany` each send **one** SQL statement for any number of rows. Three
+endpoints use them (all admin-only): albums in bulk, the same change to
+several songs, and deleting orphaned artists.
+
+**What you give up.** The `*Many` methods return `{ count }`, not rows.
+Postgres has `createManyAndReturn` / `updateManyAndReturn` when you need
+the rows back; the bulk album route uses the first, so the caller sees
+which albums were created. There are no nested writes either: no
+`connect`, no `connectOrCreate`, no `include`. `createMany` takes raw
+columns (`artistId: 1`), so Prisma doesn't check the artist the way it does
+for `connect`. I tested it: a missing artist fails at the database as a
+foreign-key violation (`P2003`), not the `P2025` `addAlbum` gets. The
+service now looks the artist up first and returns a clean 404.
+
+**A missing row isn't an error.** `update` on a missing id throws `P2025`;
+`updateMany` over `[1, 2, 999999]` simply returns `{ count: 2 }`. I kept
+that as the API's answer (status 200 plus the count) rather than inventing
+a 404 that couldn't say *which* ids were missing.
+
+**`skipDuplicates` needs something to collide with.** It becomes `ON
+CONFLICT DO NOTHING`, which does nothing at all without a unique
+constraint. So Album gained `@@unique([artistId, title])`: one title per
+artist, but two artists can share one. It's the first compound key here.
+Its index starts with `artistId`, so it also serves "albums of artist X",
+and the plain `@@index([artistId])` from sub-step 3 went away in the same
+migration. Without `skipDuplicates` (third sanity break), re-sending an
+album fails the whole insert with `P2002`. Skipped albums aren't in the
+returned list, so the caller can tell new from existing.
+
+**The third migration hit a prompt.** `migrate dev` warns that a new
+unique key fails if duplicates exist, then asks for confirmation, which a
+non-interactive shell can't give. I checked for duplicates first (a
+`groupBy` with `having`; there were none), generated the SQL with
+`prisma migrate diff --from-config-datasource --to-schema …`, saved it as
+the migration and applied it with `migrate deploy`. `migrate status` and
+a second `diff --exit-code` both confirmed no drift.
+
+**Validating an array of objects is another silent trap.** The body is
+`{ albums: CreateAlbumDto[] }`. `@ValidateNested({ each: true })` alone
+does nothing useful, because the JSON elements are plain objects and
+class-validator only knows the rules on real `CreateAlbumDto` instances.
+`@Type(() => CreateAlbumDto)` makes class-transformer build those first.
+The first sanity break removed `@Type`, and an album with `releaseDate:
+'banana'` was *saved*, status 201. I'd guessed class-validator might
+reject every body instead; it didn't. It's the same lesson as `Partial<>`
+in sub-step 2: decorators only help when there's a real class at runtime.
+With `@Type` back, the error names the exact element:
+`albums.1.releaseDate`. `@ArrayMinSize(1)` / `@ArrayMaxSize(100)` cap the
+size of one statement.
+
+**Picking fields instead of spreading them.** The global `ValidationPipe`
+has no `whitelist`, so properties without decorators pass straight
+through. A bulk update that spread the body could set `title` on every
+listed song. `updateSongs` picks `releaseDate` and `duration` by name, and
+a unit test sends an extra `title` to prove it isn't forwarded.
+
+**The orphan cleanup, finally.** Project 2 left a known gap: an artist taken
+off every song stayed in the table. On the Prisma side that's now one
+statement:
+
+```ts
+prisma.artist.deleteMany({
+  where: { songs: { none: {} }, albums: { none: {} } },
+});
+```
+
+A relation filter (`none`, plus `some`/`every`) inside a bulk delete, which
+Prisma turns into subqueries in the `WHERE`. TypeORM's `repo.delete()` only
+takes column criteria, so this needs a QueryBuilder with a subquery. The
+`albums: { none: {} }` half isn't tidiness: albums Restrict their artist's
+delete. In the second sanity break, one orphan with an album made the
+whole statement fail, and *nothing* was deleted, not even the plain
+orphan. One statement is all or nothing. (The endpoint removes every
+orphan in the database, not just test data; the E2E suite only checks its
+own stamped artists.)
+
+**What I didn't build.** A bulk *song* import with artists can't be one
+statement: `createMany` has no `connectOrCreate`, and the implicit
+`_ArtistToSong` table isn't a model you can bulk-insert into. It's N
+nested `create`s, and making those all succeed or all fail is exactly
+what `$transaction` is for, in the next sub-step.
+

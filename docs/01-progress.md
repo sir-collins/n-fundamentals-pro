@@ -1233,7 +1233,29 @@ Completes all three roadmap bullets for Project 7.
       not applied). `npm test` 136/19; `npm run test:e2e` 70/5; `tsc`,
       eslint, Prettier, build clean. Still local-only (no `migrate
       deploy` on Railway).
-- [ ] Bulk/batch operations
+- [x] Bulk/batch operations — each a single SQL statement returning
+      `{ count }` (or rows, via `*AndReturn`), admin-only, in
+      `src/prisma-relations/`. `POST /prisma/artists/:id/albums/bulk`:
+      `createManyAndReturn` + `skipDuplicates` (`ON CONFLICT DO
+      NOTHING`) on a new compound unique key `@@unique([artistId,
+      title])` — third migration `album_title_unique`, which also drops
+      the now-redundant `artistId` index (written with `migrate diff`
+      because `migrate dev` wants an interactive confirmation for a new
+      unique key; no duplicates existed). The artist is checked first:
+      bulk inserts take raw FK columns, so a missing one is a raw `P2003`
+      (verified), not `P2025`. Nested array validated with
+      `@ValidateNested({ each: true })` + `@Type`, 1–100 items.
+      `PATCH /prisma/songs/bulk`: `updateMany` over unique `ids`,
+      `releaseDate`/`duration` picked (never spread); missing ids just
+      aren't counted. `DELETE /prisma/artists/orphans`: `deleteMany`
+      with a relation filter (`songs: none`, `albums: none`) — closes
+      Project 2's orphaned-artist gap on the Prisma side. Sanity: no
+      `@Type` → a `releaseDate: 'banana'` album was **saved** (201); no
+      `albums: none` → 500 and nothing deleted (one statement, all or
+      nothing); no `skipDuplicates` → re-send is a 500. `npm test`
+      146/19; `npm run test:e2e` 82/6; `tsc`, eslint, Prettier, build
+      clean. Bulk song import with artists deferred to transactions
+      (it can't be one statement).
 - [ ] Transactions: nested writes + interactive transactions
 - [ ] Tests + a Prisma vs TypeORM comparison write-up
 

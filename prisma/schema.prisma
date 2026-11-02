@@ -71,9 +71,12 @@ model Album {
   artistId    Int
   artist      Artist @relation(fields: [artistId], references: [id])
 
-  // Postgres indexes the referenced key (artists.id), not the referencing
-  // column, so "albums of artist X" would scan the table without this.
-  @@index([artistId])
+  // A compound unique key: one title per artist (two artists can still
+  // share one). It's what `createMany({ skipDuplicates: true })` conflicts
+  // on — `ON CONFLICT DO NOTHING` needs a constraint to hit. Its index
+  // starts with artistId, so it also serves "albums of artist X" — the
+  // plain @@index([artistId]) it replaces would be redundant.
+  @@unique([artistId, title])
   @@map("albums")
 }
 
