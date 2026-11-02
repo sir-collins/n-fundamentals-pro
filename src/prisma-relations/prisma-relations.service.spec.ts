@@ -9,9 +9,10 @@ type Query = (args?: unknown) => Promise<unknown>;
 // test is the query each method sends.
 function delegates() {
   return {
-    artist: { findUnique: jest.fn<Query>() },
-    album: { create: jest.fn<Query>() },
+    artist: { findUnique: jest.fn<Query>(), deleteMany: jest.fn<Query>() },
+    album: { create: jest.fn<Query>(), createManyAndReturn: jest.fn<Query>() },
     lyrics: { findUnique: jest.fn<Query>(), upsert: jest.fn<Query>() },
+    song: { updateMany: jest.fn<Query>() },
   };
 }
 
@@ -110,6 +111,62 @@ describe('PrismaRelationsService', () => {
       await expect(service.upsertLyrics(7, { text: 'x' })).rejects.toThrow(
         'db down',
       );
+    });
+  });
+
+  describe('addAlbums', () => {
+    const albums = [album, { title: 'Starboy', releaseDate: '2016-11-25' }];
+
+    it('inserts them all under the artist in one call, skipping duplicates', async () => {
+      const created = [{ id: 5 }];
+      prisma.artist.findUnique.mockResolvedValue({ id: 1 });
+      prisma.album.createManyAndReturn.mockResolvedValue(created);
+
+      expect(await service.addAlbums(1, albums)).toBe(created);
+      expect(prisma.artist.findUnique).toHaveBeenCalledWith({
+        where: { id: 1 },
+        select: { id: true },
+      });
+      expect(prisma.album.createManyAndReturn).toHaveBeenCalledWith({
+        data: [
+          { ...album, artistId: 1 },
+          { title: 'Starboy', releaseDate: '2016-11-25', artistId: 1 },
+        ],
+        skipDuplicates: true,
+      });
+    });
+
+    it('returns null without inserting when the artist is missing', async () => {
+      prisma.artist.findUnique.mockResolvedValue(null);
+
+      expect(await service.addAlbums(999, albums)).toBeNull();
+      expect(prisma.album.createManyAndReturn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateSongs', () => {
+    it('sends one updateMany over the unique ids, picked fields only', async () => {
+      prisma.song.updateMany.mockResolvedValue({ count: 2 });
+
+      // An unvalidated extra field, as the global pipe would let through.
+      const body = { ids: [1, 2, 2], duration: '04:00', title: 'all the same' };
+
+      expect(await service.updateSongs(body)).toEqual({ count: 2 });
+      expect(prisma.song.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [1, 2] } },
+        data: { releaseDate: undefined, duration: '04:00' },
+      });
+    });
+  });
+
+  describe('deleteOrphanArtists', () => {
+    it('deletes only artists with no songs and no albums', async () => {
+      prisma.artist.deleteMany.mockResolvedValue({ count: 3 });
+
+      expect(await service.deleteOrphanArtists()).toEqual({ count: 3 });
+      expect(prisma.artist.deleteMany).toHaveBeenCalledWith({
+        where: { songs: { none: {} }, albums: { none: {} } },
+      });
     });
   });
 });

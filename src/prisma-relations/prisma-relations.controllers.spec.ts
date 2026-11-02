@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import {
+  BadRequestException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import type { Album, Lyrics } from '../generated/prisma/client';
 import { PrismaArtistsController } from './prisma-artists.controller';
+import { PrismaBulkSongsController } from './prisma-bulk-songs.controller';
 import { PrismaLyricsController } from './prisma-lyrics.controller';
 import {
   ArtistDetail,
@@ -18,11 +20,16 @@ import {
 describe('Prisma relations controllers', () => {
   let artists: PrismaArtistsController;
   let lyrics: PrismaLyricsController;
+  let bulkSongs: PrismaBulkSongsController;
   let service: DeepMocked<PrismaRelationsService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [PrismaArtistsController, PrismaLyricsController],
+      controllers: [
+        PrismaArtistsController,
+        PrismaLyricsController,
+        PrismaBulkSongsController,
+      ],
       providers: [
         {
           provide: PrismaRelationsService,
@@ -33,6 +40,7 @@ describe('Prisma relations controllers', () => {
 
     artists = module.get(PrismaArtistsController);
     lyrics = module.get(PrismaLyricsController);
+    bulkSongs = module.get(PrismaBulkSongsController);
     service = module.get(PrismaRelationsService);
   });
 
@@ -104,6 +112,54 @@ describe('Prisma relations controllers', () => {
       await expect(lyrics.findOne(7)).rejects.toThrow(
         InternalServerErrorException,
       );
+    });
+  });
+
+  describe('bulk operations', () => {
+    it('wraps the created albums', async () => {
+      const created = [{ id: 5 }] as Album[];
+      service.addAlbums.mockResolvedValue(created);
+
+      expect(await artists.addAlbums(1, { albums: [album] })).toEqual({
+        created,
+      });
+    });
+
+    it('turns bulk albums for a missing artist into a 404', async () => {
+      service.addAlbums.mockResolvedValue(null);
+
+      await expect(artists.addAlbums(999, { albums: [album] })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('passes the orphan count through', async () => {
+      service.deleteOrphanArtists.mockResolvedValue({ count: 2 });
+
+      expect(await artists.deleteOrphans()).toEqual({ count: 2 });
+    });
+
+    it('rejects a bulk update with nothing to change, without calling the service', async () => {
+      await expect(bulkSongs.updateMany({ ids: [1] })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(service.updateSongs).not.toHaveBeenCalled();
+    });
+
+    it('passes the update count through', async () => {
+      service.updateSongs.mockResolvedValue({ count: 2 });
+
+      expect(
+        await bulkSongs.updateMany({ ids: [1, 2], duration: '04:00' }),
+      ).toEqual({ count: 2 });
+    });
+
+    it('wraps an unexpected bulk failure as a 500', async () => {
+      service.updateSongs.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        bulkSongs.updateMany({ ids: [1], duration: '04:00' }),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 });
