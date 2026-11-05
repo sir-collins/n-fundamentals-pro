@@ -29,10 +29,22 @@ const notFound = () =>
 describe('PrismaSongsService', () => {
   let service: PrismaSongsService;
   let song: ReturnType<typeof songDelegate>;
+  // The batch form: the real client runs the array's queries in one
+  // transaction. Here the queries are plain promises, so Promise.all
+  // stands in; the options are what the test checks.
+  let $transaction: jest.Mock<
+    (queries: Promise<unknown>[], options?: unknown) => Promise<unknown[]>
+  >;
 
   beforeEach(() => {
     song = songDelegate();
-    service = new PrismaSongsService({ song } as unknown as PrismaService);
+    $transaction = jest.fn((queries: Promise<unknown>[]) =>
+      Promise.all(queries),
+    );
+    service = new PrismaSongsService({
+      song,
+      $transaction,
+    } as unknown as PrismaService);
   });
 
   const dto = {
@@ -80,6 +92,20 @@ describe('PrismaSongsService', () => {
         skip: 10,
         take: 10,
       });
+    });
+
+    it('reads the page and the total from one RepeatableRead snapshot', async () => {
+      song.findMany.mockResolvedValue([]);
+      song.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, limit: 10 });
+
+      expect($transaction).toHaveBeenCalledTimes(1);
+      const [queries, options] = $transaction.mock.calls[0];
+      expect(queries).toHaveLength(2);
+      // Read Committed (the default) would give each query its own
+      // snapshot, transaction or not.
+      expect(options).toEqual({ isolationLevel: 'RepeatableRead' });
     });
   });
 

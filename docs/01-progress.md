@@ -1256,7 +1256,24 @@ Completes all three roadmap bullets for Project 7.
       146/19; `npm run test:e2e` 82/6; `tsc`, eslint, Prettier, build
       clean. Bulk song import with artists deferred to transactions
       (it can't be one statement).
-- [ ] Transactions: nested writes + interactive transactions
-- [ ] Tests + a Prisma vs TypeORM comparison write-up
+- [x] Transactions: nested writes + interactive transactions — nested
+      writes were already in use (`create`/`update` with
+      `connectOrCreate` are atomic on their own). **Batch:**
+      `PrismaSongsService.findAll` now runs `findMany` + `count` as
+      `$transaction([...], { isolationLevel: RepeatableRead })`. The
+      transaction alone isn't enough under Read Committed, and a
+      `SHOW transaction_isolation` check confirmed the option reaches
+      Postgres through the `pg` adapter. **Interactive:** `POST
+      /prisma/songs/bulk` (admin, 1–100 songs, `ImportSongsDto`) runs
+      `PrismaRelationsService.importSongs` in one `$transaction(async tx
+      => …)`. Each title is checked via `tx`, then the song is created
+      with nested `connectOrCreate`. An existing or repeated title throws
+      `SongTitleConflictError`, which gives a 409 and rolls back every
+      earlier song and new artist (the E2E test checks the database
+      directly). Fields picked, not spread. Sanity: `this.prisma` instead
+      of `tx` → songs survived the 409 (2 E2E + 3 unit fail); no
+      `isolationLevel` → unit fails. `npm test` 153/19; `npm run
+      test:e2e` 90/7; `tsc`, eslint, Prettier, build clean.
+- [ ] **Up next:** Tests + a Prisma vs TypeORM comparison write-up
 
 ## Project 10: Capstone — Advanced Feature Grab Bag — Not started

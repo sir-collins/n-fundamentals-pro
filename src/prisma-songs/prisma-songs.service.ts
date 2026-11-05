@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '../generated/prisma/client';
 import type { Artist, Song } from '../generated/prisma/client';
 import { isNotFound } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +12,8 @@ import { Paginated } from '../songs/songs.service';
 export type SongWithArtists = Song & { artists: Artist[] };
 
 // Every query loads artists, so responses match GET /songs exactly.
-const withArtists = { artists: true } as const;
+// Exported for the bulk import (PrismaRelationsService.importSongs).
+export const withArtists = { artists: true } as const;
 
 /**
  * The Prisma rebuild of `SongsService` (Project 9) — same inputs, same
@@ -40,20 +42,26 @@ export class PrismaSongsService {
     page,
     limit,
   }: PaginationQueryDto): Promise<Paginated<SongWithArtists>> {
-    // Prisma has no findAndCount — the page and the total are two queries.
-    // Run side by side here; a write landing between them could make them
-    // disagree, which $transaction([...]) fixes (sub-step 5). `orderBy`
-    // keeps pages stable: without it Postgres may return rows in any
-    // order, so page 2 could repeat or skip rows from page 1.
-    const [data, total] = await Promise.all([
-      this.prisma.song.findMany({
-        include: withArtists,
-        orderBy: { id: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.song.count(),
-    ]);
+    // Prisma has no findAndCount — the page and the total are two queries,
+    // so they run as one batch transaction. The transaction alone isn't
+    // enough: under Postgres's default Read Committed, every statement
+    // takes a fresh snapshot, even inside a transaction, so a song created
+    // between the two could still make `data` and `total` disagree.
+    // RepeatableRead gives both queries the same snapshot. `orderBy` keeps
+    // pages stable: without it Postgres may return rows in any order, so
+    // page 2 could repeat or skip rows from page 1.
+    const [data, total] = await this.prisma.$transaction(
+      [
+        this.prisma.song.findMany({
+          include: withArtists,
+          orderBy: { id: 'asc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.song.count(),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     return { data, total };
   }
@@ -112,8 +120,11 @@ export class PrismaSongsService {
   }
 }
 
-/** Artist names → `connectOrCreate` entries, duplicates dropped. */
-function toArtists(names: string[]) {
+/**
+ * Artist names → `connectOrCreate` entries, duplicates dropped. Exported
+ * for the bulk import (PrismaRelationsService.importSongs).
+ */
+export function toArtists(names: string[]) {
   // Two entries for the same new name would both try to create it and
   // the second would hit the unique constraint on `name`.
   return [...new Set(names)].map((name) => ({

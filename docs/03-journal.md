@@ -2728,3 +2728,88 @@ statement: `createMany` has no `connectOrCreate`, and the implicit
 nested `create`s, and making those all succeed or all fail is exactly
 what `$transaction` is for, in the next sub-step.
 
+
+## 2026-11-06 — Transactions: all or nothing, on purpose
+
+Sub-step 5 of Project 9. Two earlier sub-steps each left a gap that only a
+transaction can close, and between them they cover Prisma's two explicit
+transaction forms.
+
+**Three ways to get a transaction.** Prisma has one implicit form and two
+explicit ones:
+
+1. **Nested writes.** One call such as `song.create({ data: { artists: {
+   connectOrCreate } } })` is several SQL statements, and Prisma wraps them
+   in a transaction itself. We've used this since sub-step 2 without naming
+   it. If one call can express the job, this is the right tool.
+2. **Batch, `$transaction([a, b])`.** The queries are built before any of
+   them runs, so `b` can't use `a`'s result.
+3. **Interactive, `$transaction(async (tx) => …)`.** Ordinary code: await,
+   inspect, branch, loop, and throw to roll everything back.
+
+TypeORM has the same idea as `dataSource.transaction(async (manager) =>
+…)`, where `manager` plays the part of `tx`. TypeORM has no array form.
+
+**Batch: the pagination gap, and the part tutorials skip.** `findAll` used
+to run `findMany` and `count` side by side, so a song created between them
+could make `data` and `total` disagree. Wrapping them in `$transaction([...])`
+is the obvious fix, but **it isn't enough on its own**. Postgres's default
+isolation level, Read Committed, gives *every statement* a fresh snapshot,
+even inside a transaction. Only `isolationLevel: RepeatableRead` puts both
+queries on the same snapshot. Before relying on it, I checked that the
+option actually reaches Postgres through the `pg` driver adapter. A
+throwaway script ran `SHOW transaction_isolation` inside the batch: it gave
+`repeatable read` with the option and `read committed` without it.
+
+**Interactive: the all-or-nothing import.** `POST /prisma/songs/bulk`
+(admin only, 1–100 songs) is the bulk import that sub-step 4 couldn't do as
+one statement. Inside one `$transaction`, each song is checked with
+`tx.song.findFirst({ where: { title } })` and then created with a nested
+`connectOrCreate`. An existing title throws `SongTitleConflictError`, which
+rolls the whole transaction back. The controller turns it into a `409`
+that names the title. The error is a plain class, not a Nest exception, so
+the service stays HTTP-agnostic like the others.
+
+Checking each title just before its own create, rather than all titles up
+front, is deliberate. An up-front `findMany` would be one query instead of
+N, but it would reject the batch before anything was written, so the
+rollback would never actually happen. Checking per song inside `tx` also
+catches a title repeated *within* the batch, because the transaction sees
+its own inserts. A conflict on song 3 undoes songs 1–2 *and* any artists
+only they created. The E2E suite checks that against the database itself,
+not just the status code.
+
+Fields are picked, not spread, for the same reason as in sub-step 4: the
+global pipe doesn't strip unknown properties, and a spread would let a body
+set `id`. (`PrismaSongsService.create` still spreads `...fields`. That's
+pre-existing and left for now, but worth a look.)
+
+**The `tx` trap.** Inside an interactive transaction, every query must go
+through `tx`. A query sent through `this.prisma` runs on a different
+connection, outside the transaction, compiles without complaint, and
+survives the rollback. That was the first sanity break: change `tx.song.create`
+to `this.prisma.song.create`. The 409 still came back, but songs A and B
+were **still in the database**. The two rollback E2E tests failed, and so
+did three unit tests, which hand the service a *separate* `tx` mock so a
+leak shows up as a call on the wrong object.
+
+**Limits worth knowing.**
+- An interactive transaction holds a connection until it ends, and Prisma
+  aborts it after 5 seconds by default. Queries are sequential on that one
+  connection, so the DTO caps an import at 100 songs, and nothing slow
+  (HTTP, email) belongs inside.
+- `connectOrCreate` isn't race-proof. If two imports create the same *new*
+  artist at once, one of them hits the unique key on `name` (`P2002`) and
+  its whole import rolls back as a 500. That's correct (nothing is half
+  written), but it isn't a friendly error. It's left as is, since this
+  route is admin-only.
+- The isolation race itself can't be reproduced on demand in a test. The
+  second sanity break, removing `isolationLevel`, is caught by a unit test
+  that asserts the option is passed, and the manual check above shows what
+  the option does.
+
+**Verified.** `npm test` 153/19, `npm run test:e2e` 90/7 (new
+`test/prisma-transactions.e2e-spec.ts`), `tsc`, eslint, Prettier and the
+build are all clean. Manually against the running app: importing
+`[Two, One]` after `One` already existed returned a 409, and only `One` was
+in `prisma.songs` afterwards.
