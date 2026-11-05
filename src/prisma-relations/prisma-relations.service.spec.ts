@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PrismaRelationsService } from './prisma-relations.service';
+import {
+  PrismaRelationsService,
+  SongTitleConflictError,
+} from './prisma-relations.service';
 
 type Query = (args?: unknown) => Promise<unknown>;
 
@@ -12,7 +15,11 @@ function delegates() {
     artist: { findUnique: jest.fn<Query>(), deleteMany: jest.fn<Query>() },
     album: { create: jest.fn<Query>(), createManyAndReturn: jest.fn<Query>() },
     lyrics: { findUnique: jest.fn<Query>(), upsert: jest.fn<Query>() },
-    song: { updateMany: jest.fn<Query>() },
+    song: {
+      updateMany: jest.fn<Query>(),
+      findFirst: jest.fn<Query>(),
+      create: jest.fn<Query>(),
+    },
   };
 }
 
@@ -27,10 +34,21 @@ const notFound = () =>
 describe('PrismaRelationsService', () => {
   let service: PrismaRelationsService;
   let prisma: ReturnType<typeof delegates>;
+  // The interactive transaction's client: a *separate* set of delegates,
+  // so a test can tell a query sent through `tx` from one that leaked
+  // out through `this.prisma` (which would escape the transaction).
+  let tx: ReturnType<typeof delegates>;
 
   beforeEach(() => {
     prisma = delegates();
-    service = new PrismaRelationsService(prisma as unknown as PrismaService);
+    tx = delegates();
+    const $transaction = jest.fn(
+      (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    service = new PrismaRelationsService({
+      ...prisma,
+      $transaction,
+    } as unknown as PrismaService);
   });
 
   const album = { title: 'After Hours', releaseDate: '2020-03-20' };
@@ -167,6 +185,80 @@ describe('PrismaRelationsService', () => {
       expect(prisma.artist.deleteMany).toHaveBeenCalledWith({
         where: { songs: { none: {} }, albums: { none: {} } },
       });
+    });
+  });
+
+  describe('importSongs', () => {
+    const song = (title: string, artists: string[]) => ({
+      title,
+      artists,
+      releaseDate: '2024-01-15',
+      duration: '03:45',
+    });
+
+    it('creates each song through the transaction, in order', async () => {
+      tx.song.findFirst.mockResolvedValue(null);
+      tx.song.create
+        .mockResolvedValueOnce({ id: 1 })
+        .mockResolvedValueOnce({ id: 2 });
+
+      expect(
+        await service.importSongs([
+          song('One', ['A', 'A']),
+          song('Two', ['B']),
+        ]),
+      ).toEqual([{ id: 1 }, { id: 2 }]);
+      expect(tx.song.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { title: 'One' },
+        select: { id: true },
+      });
+      expect(tx.song.create).toHaveBeenNthCalledWith(1, {
+        data: {
+          title: 'One',
+          releaseDate: '2024-01-15',
+          duration: '03:45',
+          artists: {
+            connectOrCreate: [{ where: { name: 'A' }, create: { name: 'A' } }],
+          },
+        },
+        include: { artists: true },
+      });
+      // Nothing escaped the transaction.
+      expect(prisma.song.findFirst).not.toHaveBeenCalled();
+      expect(prisma.song.create).not.toHaveBeenCalled();
+    });
+
+    it('never writes fields beyond the song columns', async () => {
+      tx.song.findFirst.mockResolvedValue(null);
+      tx.song.create.mockResolvedValue({ id: 1 });
+
+      // An unvalidated extra field, as the global pipe would let through.
+      const withId = { ...song('One', ['A']), id: 99 };
+      await service.importSongs([withId]);
+
+      const [args] = tx.song.create.mock.calls[0] as [
+        { data: Record<string, unknown> },
+      ];
+      expect(args.data).not.toHaveProperty('id');
+    });
+
+    it('throws on an existing title and stops creating', async () => {
+      tx.song.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 7 });
+      tx.song.create.mockResolvedValue({ id: 1 });
+
+      await expect(
+        service.importSongs([
+          song('New', ['A']),
+          song('Taken', ['B']),
+          song('Never reached', ['C']),
+        ]),
+      ).rejects.toThrow(new SongTitleConflictError('Taken'));
+      // The first song was created inside the transaction — the throw is
+      // what makes the database roll it back.
+      expect(tx.song.create).toHaveBeenCalledTimes(1);
+      expect(tx.song.findFirst).toHaveBeenCalledTimes(2);
     });
   });
 });

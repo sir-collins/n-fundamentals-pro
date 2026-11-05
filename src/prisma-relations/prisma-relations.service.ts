@@ -3,9 +3,28 @@ import { Prisma } from '../generated/prisma/client';
 import type { Album, Lyrics } from '../generated/prisma/client';
 import { isNotFound } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  SongWithArtists,
+  toArtists,
+  withArtists,
+} from '../prisma-songs/prisma-songs.service';
+import { CreateSongDto } from '../songs/dto/create-song-dto';
 import { BulkUpdateSongsDto } from './dto/bulk-update-songs.dto';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import { UpsertLyricsDto } from './dto/upsert-lyrics.dto';
+
+/**
+ * Thrown inside `importSongs`' transaction when a title already exists —
+ * throwing is what rolls the transaction back. A plain error, not a Nest
+ * HTTP exception, so the service stays HTTP-agnostic; the controller turns
+ * it into a 409.
+ */
+export class SongTitleConflictError extends Error {
+  constructor(readonly title: string) {
+    super(`A song titled "${title}" already exists`);
+    this.name = 'SongTitleConflictError';
+  }
+}
 
 // One query: the artist, their albums (one-to-many, in a stable order) and
 // a count of their songs (many-to-many) — without loading the songs.
@@ -161,6 +180,61 @@ export class PrismaRelationsService {
   deleteOrphanArtists(): Promise<{ count: number }> {
     return this.prisma.artist.deleteMany({
       where: { songs: { none: {} }, albums: { none: {} } },
+    });
+  }
+
+  /**
+   * Import several songs with their artists, all or nothing, in one
+   * interactive transaction. It can't be one statement: `createMany` has
+   * no `connectOrCreate`, and the implicit `_ArtistToSong` join table isn't
+   * a model to bulk-insert into. So it's one nested `create` per song, and
+   * the transaction makes them succeed or fail together.
+   *
+   * Each title is checked just before its song is created, through `tx`,
+   * so an earlier song in the same batch counts too (the transaction sees
+   * its own inserts). A conflict on song 3 throws, and Postgres undoes
+   * songs 1–2 and any artists they created.
+   *
+   * Every query must go through `tx`: one sent through `this.prisma` runs
+   * on another connection, outside the transaction, and stays even when
+   * the rest rolls back. The queries are sequential on the transaction's
+   * single connection; 100 songs (the DTO's cap) stay well inside
+   * Prisma's 5-second default transaction timeout.
+   * @returns the created songs, in input order.
+   * @throws SongTitleConflictError if any title already exists (nothing is
+   *   written).
+   */
+  importSongs(songs: CreateSongDto[]): Promise<SongWithArtists[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const created: SongWithArtists[] = [];
+
+      // Fields picked, never spread (as in updateSongs): the global
+      // ValidationPipe doesn't strip unknown properties, so a spread could
+      // let a body set `id`.
+      for (const { title, releaseDate, duration, artists } of songs) {
+        const existing = await tx.song.findFirst({
+          where: { title },
+          select: { id: true },
+        });
+
+        if (existing) {
+          throw new SongTitleConflictError(title);
+        }
+
+        created.push(
+          await tx.song.create({
+            data: {
+              title,
+              releaseDate,
+              duration,
+              artists: { connectOrCreate: toArtists(artists) },
+            },
+            include: withArtists,
+          }),
+        );
+      }
+
+      return created;
     });
   }
 }

@@ -3,6 +3,7 @@ import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import {
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,7 +14,9 @@ import { PrismaLyricsController } from './prisma-lyrics.controller';
 import {
   ArtistDetail,
   PrismaRelationsService,
+  SongTitleConflictError,
 } from './prisma-relations.service';
+import type { SongWithArtists } from '../prisma-songs/prisma-songs.service';
 
 // Both controllers share one service, so one spec: each translation once —
 // service null → 404, unexpected failure → 500.
@@ -159,6 +162,39 @@ describe('Prisma relations controllers', () => {
 
       await expect(
         bulkSongs.updateMany({ ids: [1], duration: '04:00' }),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    const imported = {
+      title: 'One',
+      artists: ['A'],
+      releaseDate: '2024-01-15',
+      duration: '03:45',
+    };
+
+    it('returns the imported songs', async () => {
+      const created = [{ id: 1 }] as SongWithArtists[];
+      service.importSongs.mockResolvedValue(created);
+
+      expect(await bulkSongs.importSongs({ songs: [imported] })).toBe(created);
+      expect(service.importSongs).toHaveBeenCalledWith([imported]);
+    });
+
+    it('turns a title conflict into a 409 naming the title', async () => {
+      service.importSongs.mockRejectedValue(new SongTitleConflictError('One'));
+
+      await expect(
+        bulkSongs.importSongs({ songs: [imported] }),
+      ).rejects.toThrow(
+        new ConflictException('A song titled "One" already exists'),
+      );
+    });
+
+    it('wraps an unexpected import failure as a 500', async () => {
+      service.importSongs.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        bulkSongs.importSongs({ songs: [imported] }),
       ).rejects.toThrow(InternalServerErrorException);
     });
   });
