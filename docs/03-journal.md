@@ -2813,3 +2813,72 @@ leak shows up as a call on the wrong object.
 build are all clean. Manually against the running app: importing
 `[Two, One]` after `One` already existed returned a 409, and only `One` was
 in `prisma.songs` afterwards.
+
+## 2026-11-06 — Holding the mirror to account, and what it caught
+
+Project 9's last sub-step. Since sub-step 2, `/prisma/songs` has been
+called a "line-for-line mirror" of `/songs`, but nothing checked it, so
+this step started by writing a test that does.
+
+**The parity suite.** `test/songs-parity.e2e-spec.ts` runs one set of
+scenarios against both routes with `describe.each(['/songs',
+'/prisma/songs'])`: auth (401/403), the exact response keys, pagination,
+artist replacement, empty-update 400, delete then 404. Then a few tests
+compare the two routes directly: the same payload gives the same body
+once ids are removed, and the validation and 404 messages match.
+
+I wrote it to the behaviour we *want* and ran it before changing anything.
+Fifteen of 19 passed. The mirror really was a mirror, except in one place.
+
+**The bug: an `id` in the body.** The global `ValidationPipe` had no
+`whitelist`, so undecorated properties reach the handler. Both services
+copy the body into the entity (`{ ...dto }`, `Object.assign`). The four
+failing tests, two per ORM, showed the same bug failing two ways:
+- **TypeORM:** `POST /songs` with `"id": 193` returned song **193**. `save()`
+  treats an entity with an id as an *upsert*: it SELECTs that id, finds
+  it, and UPDATEs it. A create silently overwrote another song and
+  returned 201. `PUT /songs/194` with `"id": 195` wrote 194's change into
+  song 195 the same way.
+- **Prisma:** both returned 500. The SQL log confirmed the cause: Prisma
+  passed the id straight into `INSERT … ("id", …)` and `UPDATE … SET "id" =`,
+  Postgres rejected the duplicate key, and the transaction rolled back. If
+  the id had been *free*, it would have inserted a row with a client-chosen
+  id, or renumbered the song.
+
+TypeORM's failure is the worse one, because it reports success. Picking
+fields in the services would have fixed these two routes. Following the
+decision made when this step was explained, the fix is global instead:
+`whitelist: true` in `configure-app.ts`. It's safe because every DTO field
+already has a class-validator decorator (I checked each one before
+switching it on). The parity suite then passed 19/19, and every other
+suite still passed, including GraphQL, 2FA, API keys and Mongo comments,
+so no legitimate field was being dropped. I chose stripping over rejecting
+(`forbidNonWhitelisted`): unknown fields are ignored, as most JSON APIs do.
+
+**Measuring the SQL.** I changed the method from the plan: instead of each
+ORM's own logger, Postgres logged every statement (`ALTER SYSTEM SET
+log_statement = 'all'`, reset to `none` afterwards). That gives one format
+for both ORMs, including `BEGIN`/`COMMIT`, and no app code to edit and
+revert. A script drove the same create, update, list, missing-id update
+and delete through each route, with a marker `SELECT` between operations.
+The full table is in `04-prisma-vs-typeorm.md`. The surprises:
+- **I'd overstated Prisma's update in sub-step 2.** "One query" was one
+  *call*. On the wire it's 7 statements, the same count as TypeORM's
+  load, merge and save. Prisma writes first and reads once, while TypeORM
+  reads five times and then diffs.
+- **TypeORM's create isn't atomic.** `findOrCreateMany` commits a new
+  artist in its own transaction before the song's transaction begins.
+- **`set: []` really is delete-everything-then-reinsert.** TypeORM removed
+  only the one link that went away.
+- **`findAndCount` has the snapshot gap** sub-step 5 fixed on the Prisma
+  side: three statements, no transaction. `/songs` still has it.
+
+**The write-up.** `docs/04-prisma-vs-typeorm.md` is the first numbered
+reference doc: modelling, types, migrations, the SQL table, errors,
+relations, bulk, transactions, the mass-assignment finding, testing,
+friction, and a verdict. In short, Prisma made the risky cases loud and
+its writes atomic by default, while TypeORM was more convenient to
+document but has the more dangerous default in `save()`. Writing it
+corrected one claim of my own (the update count) and the TypeORM version
+(1.1.0, not the 0.3 I'd first written), which is why the doc cites
+measurements rather than memory.

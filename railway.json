@@ -1,5 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "watchPatterns": ["/.railway-deploy"]
+  },
   "deploy": {
     "startCommand": "npm run migration:run && npm run start:prod"
   }
