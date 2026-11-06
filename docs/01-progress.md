@@ -1172,7 +1172,7 @@ Completes all three roadmap bullets for Project 7.
       known limit of name matching (a real app would confirm and store
       the Deezer id once).
 
-## Project 9 (Branch C): Rebuild Data Layer with Prisma — 🚧 In progress
+## Project 9 (Branch C): Rebuild Data Layer with Prisma — ✅ Done
 
 - [x] Setup, models & migrations, generate client — Prisma **7.10.0
       pinned exactly** (`prisma@latest` on npm was the 8.0.0-rc.22
@@ -1274,6 +1274,25 @@ Completes all three roadmap bullets for Project 7.
       of `tx` → songs survived the 409 (2 E2E + 3 unit fail); no
       `isolationLevel` → unit fails. `npm test` 153/19; `npm run
       test:e2e` 90/7; `tsc`, eslint, Prettier, build clean.
-- [ ] **Up next:** Tests + a Prisma vs TypeORM comparison write-up
+- [x] Tests + a Prisma vs TypeORM comparison write-up — **parity
+      suite** `test/songs-parity.e2e-spec.ts` runs the same scenarios
+      against `/songs` and `/prisma/songs` (`describe.each`) plus
+      side-by-side comparisons (same payload → same body; same
+      validation and 404 messages). Before the fix it failed only on
+      **mass assignment**: an `id` in the body made TypeORM's `save()`
+      overwrite another song (201), while Prisma hit the primary key (500).
+      **Fixed app-wide: `whitelist: true`** on the global `ValidationPipe`
+      (`src/configure-app.ts`); every DTO field was already decorated, and
+      all suites still pass. **SQL comparison** measured with Postgres
+      `log_statement = 'all'` (temporary, reset afterwards): see
+      [`04-prisma-vs-typeorm.md`](./04-prisma-vs-typeorm.md). Sanity: the
+      pre-fix run *is* the break, with 4 mass-assignment tests failing,
+      2 per ORM. `npm test` 153/19; `npm run test:e2e` 109/8; `tsc`,
+      eslint, Prettier, build clean.
+
+**Outcome achieved:** both ORMs running side by side on the same data
+model, a parity suite holding them to the same behaviour, and a measured
+write-up of where they differ. Still local-only: no `prisma migrate
+deploy` on Railway.
 
 ## Project 10: Capstone — Advanced Feature Grab Bag — Not started
