@@ -1295,4 +1295,33 @@ model, a parity suite holding them to the same behaviour, and a measured
 write-up of where they differ. Still local-only: no `prisma migrate
 deploy` on Railway.
 
-## Project 10: Capstone — Advanced Feature Grab Bag — Not started
+## Project 10: Capstone — Advanced Feature Grab Bag — In progress
+
+Chosen four (of the roadmap's seven): custom decorator, Event Emitter,
+CRON scheduling, file upload. Queues left as a stretch goal (needs Redis).
+
+- [x] Custom decorator: `@CurrentUser()` —
+      `src/auth/decorators/current-user.decorator.ts`, a
+      `createParamDecorator` that injects `req.user` (or one field of it:
+      `@CurrentUser('id') userId: number`). It finds the request the same
+      way `RolesGuard` does, so it works for REST and GraphQL. It does **no
+      authentication** itself: it only reads what `AuthGuard('jwt')`,
+      `ApiKeyGuard` or `GqlAuthGuard` put there, and injects `undefined` on
+      an unguarded route. A shared `AuthUser` type (`src/auth/auth-user.ts`)
+      is now what `JwtStrategy.validate` returns, what `ApiKeyGuard` sets,
+      and what handlers receive, replacing ~10 hand-copied
+      `Request & { user: {...} }` types in `AuthController`,
+      `CommentsController` and `AuthResolver.profile`. `POST /auth/login`
+      stays on `@Req()` on purpose: its `req.user` comes from
+      `LocalStrategy` and also has `isTwoFactorEnabled`. Unit tests call the
+      exported `currentUserFactory` directly with hand-built HTTP/GraphQL
+      contexts. Sanity: without the GraphQL branch the 3 GraphQL E2E tests
+      that query `profile` fail with `Cannot read properties of undefined
+      (reading 'user')`, plus 2 unit tests. `npm test` 158/20;
+      `npm run test:e2e` 109/8; `tsc`, eslint, Prettier, build clean.
+      (Gotcha met on the way: a Homebrew Postgres on `127.0.0.1:5432`
+      shadowed Docker's port and made every E2E `beforeAll` hang on
+      `role "nestjs" does not exist`; stopping it fixed it.)
+- [ ] Event Emitter
+- [ ] CRON scheduling
+- [ ] File upload

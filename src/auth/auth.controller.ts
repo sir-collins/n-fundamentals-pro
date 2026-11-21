@@ -35,7 +35,9 @@ import { TwoFactorCodeDto } from './dto/two-factor-code.dto';
 import { TwoFactorAuthenticateDto } from './dto/two-factor-authenticate.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKey } from './entities/api-key.entity';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User } from '../users/entities/user.entity';
+import type { AuthUser } from './auth-user';
+import { CurrentUser } from './decorators/current-user.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -100,6 +102,8 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(
+    // Stays on @Req(): this req.user comes from LocalStrategy and carries
+    // isTwoFactorEnabled too, so it isn't an AuthUser.
     @Req()
     req: Request & {
       user: Pick<User, 'id' | 'email' | 'role' | 'isTwoFactorEnabled'>;
@@ -128,11 +132,8 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @UseGuards(AuthGuard('jwt'))
   @Get('profile')
-  profile(
-    @Req()
-    req: Request & { user: { id: number; email: string; role: UserRole } },
-  ): { id: number; email: string; role: UserRole } {
-    return req.user;
+  profile(@CurrentUser() user: AuthUser): AuthUser {
+    return user;
   }
 
   /**
@@ -154,12 +155,12 @@ export class AuthController {
   @Post('2fa/generate')
   @HttpCode(HttpStatus.OK)
   async generateTwoFactor(
-    @Req() req: Request & { user: { id: number; email: string } },
+    @CurrentUser() user: AuthUser,
   ): Promise<{ qrCodeDataUrl: string }> {
     try {
       return await this.authService.generateTwoFactorSecret(
-        req.user.id,
-        req.user.email,
+        user.id,
+        user.email,
       );
     } catch {
       throw new InternalServerErrorException(
@@ -186,11 +187,11 @@ export class AuthController {
   @Post('2fa/turn-on')
   @HttpCode(HttpStatus.OK)
   async turnOnTwoFactor(
-    @Req() req: Request & { user: { id: number } },
+    @CurrentUser('id') userId: number,
     @Body() dto: TwoFactorCodeDto,
   ): Promise<{ message: string }> {
     try {
-      await this.authService.turnOnTwoFactor(req.user.id, dto.code);
+      await this.authService.turnOnTwoFactor(userId, dto.code);
       return { message: 'Two-factor authentication enabled' };
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -274,11 +275,11 @@ export class AuthController {
   @Post('api-keys')
   @HttpCode(HttpStatus.CREATED)
   async createApiKey(
-    @Req() req: Request & { user: { id: number } },
+    @CurrentUser('id') userId: number,
     @Body() dto: CreateApiKeyDto,
   ): Promise<{ id: number; apiKey: string }> {
     try {
-      return await this.apiKeysService.generate(req.user.id, dto.label);
+      return await this.apiKeysService.generate(userId, dto.label);
     } catch {
       throw new InternalServerErrorException('Failed to create API key');
     }
@@ -295,10 +296,10 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @Get('api-keys')
   async listApiKeys(
-    @Req() req: Request & { user: { id: number } },
+    @CurrentUser('id') userId: number,
   ): Promise<Pick<ApiKey, 'id' | 'label' | 'createdAt' | 'lastUsedAt'>[]> {
     try {
-      return await this.apiKeysService.listForUser(req.user.id);
+      return await this.apiKeysService.listForUser(userId);
     } catch {
       throw new InternalServerErrorException('Failed to list API keys');
     }
@@ -322,11 +323,8 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Missing/invalid API key.' })
   @UseGuards(ApiKeyGuard)
   @Get('api-keys/whoami')
-  whoami(
-    @Req()
-    req: Request & { user: { id: number; email: string; role: UserRole } },
-  ): { id: number; email: string; role: UserRole } {
-    return req.user;
+  whoami(@CurrentUser() user: AuthUser): AuthUser {
+    return user;
   }
 
   /**
@@ -346,11 +344,11 @@ export class AuthController {
   @Delete('api-keys/:id')
   @HttpCode(HttpStatus.OK)
   async revokeApiKey(
-    @Req() req: Request & { user: { id: number } },
+    @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ message: string }> {
     try {
-      await this.apiKeysService.revoke(req.user.id, id);
+      await this.apiKeysService.revoke(userId, id);
       return { message: 'API key revoked' };
     } catch (error) {
       if (error instanceof NotFoundException) {

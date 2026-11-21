@@ -2882,3 +2882,67 @@ document but has the more dangerous default in `save()`. Writing it
 corrected one claim of my own (the update count) and the TypeORM version
 (1.1.0, not the 0.3 I'd first written), which is why the doc cites
 measurements rather than memory.
+
+## 2026-11-21 — `@CurrentUser()`, and a Postgres that wasn't ours
+
+Project 10 is the capstone: pick 3–4 of seven features and add them to the
+app. The four chosen are a custom decorator, Event Emitter, CRON
+scheduling and file upload. Queues are left as a stretch goal because
+they need Redis. The decorator went first: it's small, and it cleans up
+code that already exists rather than adding a new feature.
+
+**The problem it fixes.** About ten handlers read the caller with
+`@Req() req: Request & { user: { id: number; email: string } }`, and
+`AuthResolver.profile` used `@Context()` to get `context.req.user`. Each
+copy of that type was a promise to TypeScript that nothing checked
+against what `JwtStrategy.validate` actually returns. If the shape had
+changed, every copy would still have compiled.
+
+**Why a param decorator.** `@Roles()` uses `SetMetadata`: it only attaches
+a label for a guard to read later. `@CurrentUser()` is a different kind of
+decorator. `createParamDecorator` supplies the *value* of a handler
+argument, the same job `@Body()` and `@Param()` do. It finds the request
+the same way `RolesGuard` does (`getType()` decides between `switchToHttp()`
+and the GraphQL context), so one decorator works for REST and GraphQL. The
+`data` argument gives `@CurrentUser('id') userId: number` for handlers that
+only need the id. It does **no authentication**: it reads whatever a guard
+already put on `req.user`, and injects `undefined` on an unguarded route.
+Guards still decide who gets in.
+
+**One type, three users.** `src/auth/auth-user.ts` defines `AuthUser`
+(`Pick<User, 'id' | 'email' | 'role'>`). `JwtStrategy.validate` returns it,
+`ApiKeyGuard` assigns it, and handlers receive it, so the shape is written
+down once. `POST /auth/login` stays on `@Req()` on purpose. There `req.user`
+comes from `LocalStrategy` and also carries `isTwoFactorEnabled`, so typing
+it as `AuthUser` would hide a field that `login()` needs.
+
+**Testing a decorator.** What `createParamDecorator` returns can't simply
+be called, so the factory is exported as `currentUserFactory` and tested
+directly with hand-built contexts, in the same style as `roles.guard.spec.ts`.
+The GraphQL case fakes `getArgs()` as `[root, args, { req }, info]`, because
+that array is what `GqlExecutionContext.create` reads the context from.
+
+**Gotcha: a Postgres that wasn't ours.** The unit tests passed, but every
+E2E suite hung in `beforeAll`, including songs tests this change never
+touched. That pointed at the environment. The first attempt to find the
+cause failed because I'd filtered the output down to test names, which
+threw away the error text. Running one suite with full output showed
+TypeORM retrying on `role "nestjs" does not exist`, yet that role existed
+inside the Docker container. `lsof` showed why: a Homebrew Postgres 18,
+started by hand days earlier, was listening on `127.0.0.1:5432`. Docker
+publishes on `*:5432`, and the more specific address wins, so the app's
+`localhost:5432` went to Homebrew. Stopping that server fixed it.
+
+**Lessons:** when unrelated tests all fail, check the environment first.
+When a test run fails, keep its full output and filter it afterwards.
+
+**Sanity break.** With the GraphQL branch removed from the decorator, the
+3 GraphQL E2E tests that query `profile` failed with `Cannot read
+properties of undefined (reading 'user')`, the same error `RolesGuard`'s
+comment records. Two unit tests failed as well. The first broken run
+reported 11 failures instead, probably because a hung Jest process from an
+earlier stopped run was still around. A clean rerun gave the expected 3.
+
+**Verified.** `npm test` 158/20 (5 new), `npm run test:e2e` 109/8 with no
+E2E test edits needed, since behaviour didn't change. `tsc`, eslint,
+Prettier and the build are clean.
