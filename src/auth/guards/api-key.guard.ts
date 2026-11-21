@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ApiKeysService } from '../api-keys.service';
-import { UserRole } from '../../users/entities/user.entity';
+import type { AuthUser } from '../auth-user';
 
 /**
  * Authenticates a request via the `x-api-key` header instead of a JWT
@@ -26,9 +26,7 @@ export class ApiKeyGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
-      .getRequest<
-        Request & { user?: { id: number; email: string; role: UserRole } }
-      >();
+      .getRequest<Request & { user?: AuthUser }>();
 
     const rawKey = request.header('x-api-key');
 

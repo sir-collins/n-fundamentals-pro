@@ -12,7 +12,6 @@ import {
   Param,
   ParseIntPipe,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -22,12 +21,13 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
 import { Types } from 'mongoose';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CommentDocument } from './schemas/comment.schema';
 import { SongsService } from '../songs/songs.service';
+import type { AuthUser } from '../auth/auth-user';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
@@ -69,7 +69,7 @@ export class CommentsController {
   async create(
     @Param('songId', ParseIntPipe) songId: number,
     @Body() dto: CreateCommentDto,
-    @Req() req: Request & { user: { id: number; email: string } },
+    @CurrentUser() user: AuthUser,
   ): Promise<CommentDocument> {
     try {
       const song = await this.songsService.findOne(songId);
@@ -80,8 +80,8 @@ export class CommentsController {
 
       return await this.commentsService.create(
         songId,
-        req.user.id,
-        req.user.email,
+        user.id,
+        user.email,
         dto,
       );
     } catch (error) {
@@ -150,7 +150,7 @@ export class CommentsController {
   @Delete('comments/:id')
   async remove(
     @Param('id') id: string,
-    @Req() req: Request & { user: { id: number; role: UserRole } },
+    @CurrentUser() user: AuthUser,
   ): Promise<{ message: string }> {
     try {
       if (!Types.ObjectId.isValid(id)) {
@@ -163,10 +163,7 @@ export class CommentsController {
         throw new NotFoundException(`Comment with id ${id} was not found`);
       }
 
-      if (
-        comment.authorId !== req.user.id &&
-        req.user.role !== UserRole.ADMIN
-      ) {
+      if (comment.authorId !== user.id && user.role !== UserRole.ADMIN) {
         throw new ForbiddenException(
           'Only the comment author or an admin can delete this comment',
         );

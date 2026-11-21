@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRole } from '../../users/entities/user.entity';
+import type { AuthUser } from '../auth-user';
 
 /**
  * Passport strategy backing any route guarded with `AuthGuard('jwt')`.
@@ -43,7 +44,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     email?: string;
     role?: UserRole;
     twoFactorPending?: boolean;
-  }): { id: number; email: string; role: UserRole } {
+  }): AuthUser {
     if (payload.twoFactorPending || !payload.email || !payload.role) {
       throw new UnauthorizedException('Invalid or incomplete session token');
     }

@@ -93,7 +93,7 @@ describe('AuthResolver', () => {
     it('returns the user the guard attached to the request', () => {
       const user = { id: 1, email: 'ada@example.com', role: UserRole.USER };
 
-      expect(resolver.profile({ req: { user } })).toBe(user);
+      expect(resolver.profile(user)).toBe(user);
     });
   });
 });

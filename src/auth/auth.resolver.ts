@@ -1,5 +1,5 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
-import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
 import { SignupDto } from './dto/signup.dto';
@@ -7,6 +7,8 @@ import { LoginDto } from './dto/login.dto';
 import { LoginResult } from './dto/login-result.type';
 import { SignupResult } from './dto/signup-result.type';
 import { User } from '../users/entities/user.entity';
+import type { AuthUser } from './auth-user';
+import { CurrentUser } from './decorators/current-user.decorator';
 
 /**
  * GraphQL layer for `auth` — scoped tightly to signup/login/profile,
@@ -53,9 +55,7 @@ export class AuthResolver {
   /** The authenticated user's own identity — GraphQL's `GET /auth/profile`. */
   @UseGuards(GqlAuthGuard)
   @Query(() => User)
-  profile(
-    @Context() context: { req: { user: Pick<User, 'id' | 'email' | 'role'> } },
-  ): Pick<User, 'id' | 'email' | 'role'> {
-    return context.req.user;
+  profile(@CurrentUser() user: AuthUser): AuthUser {
+    return user;
   }
 }
