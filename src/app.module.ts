@@ -2,6 +2,7 @@ import { join } from 'path';
 import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
@@ -28,6 +29,7 @@ import responseCachePlugin from '@apollo/server-plugin-response-cache';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrismaSongsModule } from './prisma-songs/prisma-songs.module';
+import { MailModule } from './mail/mail.module';
 import { PrismaRelationsModule } from './prisma-relations/prisma-relations.module';
 
 @Module({
@@ -133,6 +135,11 @@ import { PrismaRelationsModule } from './prisma-relations/prisma-relations.modul
     PrismaModule,
     PrismaSongsModule,
     PrismaRelationsModule,
+    // In-process event bus: lets a service announce a fact (user.created)
+    // without knowing who reacts to it. Not durable: an event emitted just
+    // before a crash is lost, so it's only for side effects that may be.
+    EventEmitterModule.forRoot(),
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

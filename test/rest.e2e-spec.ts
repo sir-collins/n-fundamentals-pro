@@ -15,6 +15,7 @@ import { Song } from './../src/songs/entities/song.entity';
 import { Artist } from './../src/artists/entities/artist.entity';
 import { ApiKey } from './../src/auth/entities/api-key.entity';
 import { Comment } from './../src/comments/schemas/comment.schema';
+import { MailService } from './../src/mail/mail.service';
 
 /** REST's error shape, from HttpExceptionFilter. */
 interface RestError {
@@ -44,6 +45,7 @@ describe('REST API (e2e)', () => {
   const otherEmail = email('rest-other');
   const adminEmail = email('rest-admin');
   const tfaEmail = email('rest-2fa');
+  const welcomeEmail = email('rest-welcome');
   const songTitle = `E2E REST Song ${stamp}`;
   const doomedSongTitle = `E2E REST Song ${stamp} doomed`;
   const artistName = `E2E REST Artist ${stamp}`;
@@ -100,7 +102,7 @@ describe('REST API (e2e)', () => {
 
   afterAll(async () => {
     const created = await users.findBy({
-      email: In([userEmail, otherEmail, adminEmail, tfaEmail]),
+      email: In([userEmail, otherEmail, adminEmail, tfaEmail, welcomeEmail]),
     });
     const userIds = created.map((u) => u.id);
     const songs = app.get<Repository<Song>>(getRepositoryToken(Song));
@@ -226,6 +228,27 @@ describe('REST API (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(204);
       await http().get(`/songs/${doomedId}`).expect(404);
+    });
+  });
+
+  describe('welcome email (Event Emitter)', () => {
+    it('sends it after signup, and a mail failure does not fail signup', async () => {
+      const mail = app.get(MailService);
+      const sendWelcome = jest
+        .spyOn(mail, 'sendWelcomeEmail')
+        .mockRejectedValue(new Error('SMTP down'));
+
+      try {
+        await signup(welcomeEmail);
+
+        // The listener is async: it runs after the response, so wait for it.
+        for (let i = 0; i < 50 && sendWelcome.mock.calls.length === 0; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(sendWelcome).toHaveBeenCalledWith(welcomeEmail);
+      } finally {
+        sendWelcome.mockRestore();
+      }
     });
   });
 

@@ -2946,3 +2946,75 @@ earlier stopped run was still around. A clean rerun gave the expected 3.
 **Verified.** `npm test` 158/20 (5 new), `npm run test:e2e` 109/8 with no
 E2E test edits needed, since behaviour didn't change. `tsc`, eslint,
 Prettier and the build are clean.
+
+## 2026-11-22 — Event Emitter: a welcome email that signup doesn't know about
+
+Step 2 of the capstone. The goal: send a welcome email on signup without
+`AuthService` depending on anything mail-related.
+
+**Events instead of calls.** `CommentsService.create` shows the
+alternative we wanted to avoid: after saving, it calls the WebSocket
+gateway and the GraphQL PubSub itself, so it has to inject every system
+that cares about new comments. With `@nestjs/event-emitter` the direction
+flips. `AuthService.signup` announces one fact,
+`emit('user.created', new UserCreatedEvent(id, email))`, and knows
+nothing about who listens. `WelcomeEmailListener` in a new `MailModule`
+subscribes with `@OnEvent`. Adding a second side effect later means adding
+a listener, not editing signup. The event is a small class plus a
+`USER_CREATED` constant, so the emitter and listener share one name and
+one type (the same idea as `AuthUser` in step 1). The comments flow was
+left alone on purpose and is a candidate follow-up.
+
+**Where to emit.** In `AuthService.signup`, not `UsersService.create`.
+The seed script calls `usersService.create` directly, and seeded admin
+accounts shouldn't get welcome emails. REST and GraphQL signup both go
+through `AuthService.signup`, and the manual run confirmed both log the
+welcome line.
+
+**Gotcha: another ESM-only package.** `@nestjs/event-emitter` 12 has
+`"type": "module"`, so every unit suite that imported it failed with
+`Unexpected token 'export'`, the same trap `@nestjs/mongoose` set in
+Project 6. Same fix: add it to `transformIgnorePatterns` in both Jest
+configs, after checking that its dependency `eventemitter2` is plain
+CommonJS. A first test run looked green ("21 passed") only because the
+broken suites never loaded. Checking the suite list (3 FAIL) showed it.
+
+**Reading the library instead of assuming.** I'd planned a try/catch in
+the listener. The installed source
+(`event-subscribers.loader.js`) already wraps every listener: with the
+default `suppressErrors: true` it logs the error under the `Event`
+context and swallows it. So the listener has no try/catch, and the E2E
+test proves it: with `MailService` rejecting, signup still returns 201
+and the log shows `ERROR [Event] SMTP down`.
+
+**Correcting my own explanation of `async: true`.** Before building it, I
+said a slow email would slow signup unless the listener had
+`async: true`. The sanity break didn't confirm that. With a 3-second
+*awaited* delay in the mail service, signup took 0.12s **with or
+without** `async: true`. The listener is an `async` function: `emit()`
+calls it, it returns a promise at its first `await`, and `emit()` doesn't
+wait for that promise. Changing the delay to a 3-second *busy loop*
+showed the real difference: 3.1s without `async: true`, 0.12s with it.
+So `async: true` protects against blocking, synchronous work in a
+listener, not against slow I/O. It stays on because a future listener
+might do something CPU-heavy.
+
+**The important sanity break: `suppressErrors: false`.** With the mail
+service throwing, signup still answered 201, and then the whole app
+process exited: the listener's rejected promise had no handler, and Node
+exits on an unhandled rejection. The next request got no answer at all.
+The default is what turns "an email failed" into one log line instead of
+an outage. The listener's comment says not to turn it off.
+
+**Still not durable.** The event exists only in memory. If the process
+dies between `emit` and the send, the email is gone and nothing retries.
+That's the job queues do, which is why they're the stretch goal.
+
+**Lessons:** read the installed library's code for behaviour you're about
+to rely on. Make a sanity break measure the claim (time the request,
+check the process is still alive) instead of assuming it confirms the
+explanation.
+
+**Verified.** `npm test` 162/21 (4 new), `npm run test:e2e` 110/8 (1 new),
+`tsc`, eslint, Prettier and the build are clean. The sanity-test users
+created in the dev database were deleted afterwards.

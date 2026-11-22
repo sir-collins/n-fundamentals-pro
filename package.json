@@ -35,6 +35,7 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/event-emitter": "^12.0.3",
     "@nestjs/graphql": "^13.4.5",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/mongoose": "^12.0.0",
@@ -120,7 +121,7 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "transformIgnorePatterns": [
-      "node_modules/(?!(@nestjs/mongoose)/)"
+      "node_modules/(?!(@nestjs/mongoose|@nestjs/event-emitter)/)"
     ]
   }
 }

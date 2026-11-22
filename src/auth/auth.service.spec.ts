@@ -9,12 +9,17 @@ import {
 } from '@jest/globals';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
 import * as qrcode from 'qrcode';
 import { authenticator } from 'otplib';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { User, UserRole } from '../users/entities/user.entity';
+import {
+  USER_CREATED,
+  UserCreatedEvent,
+} from '../users/events/user-created.event';
 
 // Libraries AuthService imports directly — DI can't swap these, so the
 // modules themselves are replaced. bcrypt/qrcode export plain functions,
@@ -53,6 +58,7 @@ const NOW_STEP = 59_719_400;
 describe('AuthService', () => {
   let service: AuthService;
   let usersService: DeepMocked<UsersService>;
+  let eventEmitter: DeepMocked<EventEmitter2>;
   // Real, not mocked: signing/verifying is in-memory with no I/O, and a
   // real one lets tests decode issued tokens and forge expired or
   // wrong-kind ones — the things that actually matter for auth.
@@ -79,7 +85,8 @@ describe('AuthService', () => {
     usersService.enableTwoFactor.mockResolvedValue(undefined);
     // Default: the step hasn't been spent yet. Replay tests override it.
     usersService.consumeTotpStep.mockResolvedValue(true);
-    service = new AuthService(usersService, jwtService);
+    eventEmitter = createMock<EventEmitter2>();
+    service = new AuthService(usersService, jwtService, eventEmitter);
   });
 
   describe('signup', () => {
@@ -89,6 +96,27 @@ describe('AuthService', () => {
       expect(
         await service.signup({ email: user.email, password: 'password123' }),
       ).toEqual({ id: 1, email: 'ada@example.com' });
+    });
+
+    it('emits user.created with the new id and email', async () => {
+      usersService.create.mockResolvedValue(user);
+
+      await service.signup({ email: user.email, password: 'password123' });
+
+      expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        USER_CREATED,
+        new UserCreatedEvent(1, 'ada@example.com'),
+      );
+    });
+
+    it('emits nothing when the user could not be created', async () => {
+      usersService.create.mockRejectedValue(new Error('duplicate email'));
+
+      await expect(
+        service.signup({ email: user.email, password: 'password123' }),
+      ).rejects.toThrow('duplicate email');
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
   });
 

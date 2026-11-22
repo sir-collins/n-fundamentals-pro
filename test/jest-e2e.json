@@ -7,5 +7,7 @@
     "src/generated/.+\\.ts$": "<rootDir>/prisma-cjs-transformer.js",
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "transformIgnorePatterns": ["node_modules/(?!(@nestjs/mongoose)/)"]
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@nestjs/mongoose|@nestjs/event-emitter)/)"
+  ]
 }
