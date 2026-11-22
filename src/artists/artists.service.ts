@@ -76,4 +76,31 @@ export class ArtistsService {
 
     return bySong;
   }
+
+  /**
+   * Delete every artist that is on no song, in one `DELETE`. Closes
+   * Project 2's known gap on the TypeORM side: an artist taken off every
+   * song it was on stayed in the table. Run nightly by
+   * `OrphanArtistsCleanupJob`.
+   *
+   * The orphan subquery is built from the `artist.songs` relation, so
+   * TypeORM supplies the join-table and column names instead of this
+   * method hard-coding them.
+   * @returns how many artists were deleted.
+   */
+  async deleteOrphans(): Promise<number> {
+    const orphanIds = this.artistsRepository
+      .createQueryBuilder('orphan')
+      .select('orphan.id')
+      .leftJoin('orphan.songs', 'song')
+      .where('song.id IS NULL');
+
+    const result = await this.artistsRepository
+      .createQueryBuilder()
+      .delete()
+      .where(`id IN (${orphanIds.getQuery()})`)
+      .execute();
+
+    return result.affected ?? 0;
+  }
 }

@@ -4,6 +4,7 @@ import { Artist } from './entities/artist.entity';
 import { ArtistsService } from './artists.service';
 import { DeezerService } from './deezer.service';
 import { ArtistsResolver } from './artists.resolver';
+import { OrphanArtistsCleanupJob } from './orphan-artists-cleanup.job';
 
 /**
  * No controller yet — artists are only created indirectly, through songs,
@@ -12,7 +13,12 @@ import { ArtistsResolver } from './artists.resolver';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Artist])],
-  providers: [ArtistsService, DeezerService, ArtistsResolver],
+  providers: [
+    ArtistsService,
+    DeezerService,
+    ArtistsResolver,
+    OrphanArtistsCleanupJob,
+  ],
   exports: [ArtistsService, DeezerService],
 })
 export class ArtistsModule {}

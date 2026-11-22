@@ -52,7 +52,9 @@ Swap `SongsService`'s in-memory array for Postgres via TypeORM:
 pagination, and a real many-to-many relationship to a second entity. Known
 gap, not pursued (out of scope for this project): an `Artist` removed from
 every song it was on stays in the table as an orphaned row — nothing
-prunes those yet.
+prunes those yet. *(Closed in Project 10 step 3: a nightly CRON job on the
+TypeORM side; the Prisma side got `DELETE /prisma/artists/orphans` in
+Project 9.)*
 
 ## Project 3: Authentication & Authorization — ✅ Done
 
@@ -1344,5 +1346,25 @@ CRON scheduling, file upload. Queues left as a stretch goal (needs Redis).
       `npm run test:e2e` 110/8; `tsc`, eslint, Prettier, build clean.
       Not durable: a crash between emit and send loses the email (queues
       would fix that).
-- [ ] CRON scheduling
+- [x] CRON scheduling: nightly orphaned-artist cleanup —
+      `@nestjs/schedule` 12.0.4, `ScheduleModule.forRoot()` in `AppModule`.
+      `ArtistsService.deleteOrphans()` runs one `DELETE … WHERE id IN
+      (orphans)`, with the subquery built from the `artist.songs` relation
+      so TypeORM supplies the join-table names. `OrphanArtistsCleanupJob`
+      (`src/artists/orphan-artists-cleanup.job.ts`):
+      `@Cron(EVERY_DAY_AT_3AM, { name: 'orphan-artists-cleanup', timeZone:
+      'UTC' })`, logs `Deleted N orphaned artist(s)`. TypeORM side only
+      (Prisma has its own endpoint). Closes Project 2's known gap. No
+      try/catch: `@nestjs/schedule` wraps every job and logs errors under
+      `Scheduler`. ESM-only again, so it joins the Jest
+      `transformIgnorePatterns`. Tests: job unit spec; E2E checks the job
+      is registered (`0 03 * * *`, next run 03:00 UTC) and that an artist
+      taken off its only song is deleted while one still on a song stays.
+      Manual: on a temporary 10-second schedule the built app logged the
+      job firing twice. Sanity: without `ScheduleModule.forRoot()` the app
+      boots with no warning and the direct-call test still passes; only
+      the registry test fails (`Nest could not find SchedulerRegistry`).
+      `npm test` 164/22; `npm run test:e2e` 112/8; `tsc`, eslint,
+      Prettier, build clean. The E2E run also deleted the 2 orphans
+      already in the dev DB, as intended.
 - [ ] File upload
