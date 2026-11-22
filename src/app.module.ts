@@ -3,6 +3,7 @@ import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
@@ -139,6 +140,10 @@ import { PrismaRelationsModule } from './prisma-relations/prisma-relations.modul
     // without knowing who reacts to it. Not durable: an event emitted just
     // before a crash is lost, so it's only for side effects that may be.
     EventEmitterModule.forRoot(),
+    // Turns @Cron/@Interval/@Timeout methods into real scheduled jobs.
+    // Without it those decorators are inert and nothing errors: the jobs
+    // just never run (the E2E suite checks the job is registered).
+    ScheduleModule.forRoot(),
     MailModule,
   ],
   controllers: [AppController],

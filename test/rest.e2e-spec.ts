@@ -16,6 +16,11 @@ import { Artist } from './../src/artists/entities/artist.entity';
 import { ApiKey } from './../src/auth/entities/api-key.entity';
 import { Comment } from './../src/comments/schemas/comment.schema';
 import { MailService } from './../src/mail/mail.service';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import {
+  ORPHAN_ARTISTS_CLEANUP,
+  OrphanArtistsCleanupJob,
+} from './../src/artists/orphan-artists-cleanup.job';
 
 /** REST's error shape, from HttpExceptionFilter. */
 interface RestError {
@@ -49,6 +54,9 @@ describe('REST API (e2e)', () => {
   const songTitle = `E2E REST Song ${stamp}`;
   const doomedSongTitle = `E2E REST Song ${stamp} doomed`;
   const artistName = `E2E REST Artist ${stamp}`;
+  const cleanupSongTitle = `E2E REST Song ${stamp} cleanup`;
+  const keptArtistName = `E2E REST Artist ${stamp} kept`;
+  const orphanArtistName = `E2E REST Artist ${stamp} orphan`;
 
   let userToken: string;
   let otherToken: string;
@@ -107,7 +115,9 @@ describe('REST API (e2e)', () => {
     const userIds = created.map((u) => u.id);
     const songs = app.get<Repository<Song>>(getRepositoryToken(Song));
     const songIds = (
-      await songs.findBy({ title: In([songTitle, doomedSongTitle]) })
+      await songs.findBy({
+        title: In([songTitle, doomedSongTitle, cleanupSongTitle]),
+      })
     ).map((s) => s.id);
 
     await app
@@ -116,10 +126,12 @@ describe('REST API (e2e)', () => {
     await app
       .get<Repository<ApiKey>>(getRepositoryToken(ApiKey))
       .delete({ userId: In(userIds) });
-    await songs.delete({ title: In([songTitle, doomedSongTitle]) });
+    await songs.delete({
+      title: In([songTitle, doomedSongTitle, cleanupSongTitle]),
+    });
     await app
       .get<Repository<Artist>>(getRepositoryToken(Artist))
-      .delete({ name: artistName });
+      .delete({ name: In([artistName, keptArtistName, orphanArtistName]) });
     await users.delete({ id: In(userIds) });
     await app.close();
   });
@@ -228,6 +240,41 @@ describe('REST API (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(204);
       await http().get(`/songs/${doomedId}`).expect(404);
+    });
+  });
+
+  describe('orphaned artist cleanup (CRON)', () => {
+    it('registers the job with the scheduler, nightly at 03:00 UTC', () => {
+      const job = app.get(SchedulerRegistry).getCronJob(ORPHAN_ARTISTS_CLEANUP);
+
+      expect(job.cronTime.source).toBe('0 03 * * *');
+      expect(job.nextDate().toUTC()).toMatchObject({ hour: 3, minute: 0 });
+    });
+
+    it('deletes an artist taken off its only song, keeping the rest', async () => {
+      const artists = app.get<Repository<Artist>>(getRepositoryToken(Artist));
+      const created = await http()
+        .post('/songs')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: cleanupSongTitle,
+          artists: [keptArtistName, orphanArtistName],
+          releaseDate: '2024-01-01',
+          duration: '03:30',
+        })
+        .expect(201);
+      await http()
+        .put(`/songs/${(created.body as Song).id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ artists: [keptArtistName] })
+        .expect(200);
+      expect(await artists.existsBy({ name: orphanArtistName })).toBe(true);
+
+      // Call the job directly instead of waiting for 03:00.
+      await app.get(OrphanArtistsCleanupJob).handleCleanup();
+
+      expect(await artists.existsBy({ name: orphanArtistName })).toBe(false);
+      expect(await artists.existsBy({ name: keptArtistName })).toBe(true);
     });
   });
 

@@ -3018,3 +3018,67 @@ explanation.
 **Verified.** `npm test` 162/21 (4 new), `npm run test:e2e` 110/8 (1 new),
 `tsc`, eslint, Prettier and the build are clean. The sanity-test users
 created in the dev database were deleted afterwards.
+
+## 2026-11-22 — CRON: a job nobody calls
+
+Step 3 of the capstone. Everything so far ran because a request arrived;
+this is the first code that runs on a clock.
+
+**Picking a real job.** Project 2 left a known gap: an artist taken off
+every song stays in the `artist` table. Project 9 fixed it on the Prisma
+side with an on-demand endpoint. The TypeORM side, which serves the main
+`/songs` API, still had it, and the dev database had 2 orphans. A nightly
+cleanup fits: no user should have to trigger it, and nobody needs it to
+happen the moment an artist becomes orphaned. The job cleans the TypeORM
+side only, keeping the two stacks separate as they've been since Project 9.
+
+**The delete.** `ArtistsService.deleteOrphans()` is one statement:
+`DELETE FROM artist WHERE id IN (artists LEFT JOIN songs … WHERE song.id IS
+NULL)`. The subquery is built from the `artist.songs` relation rather than
+naming `song_artists_artist` by hand, so a renamed join table can't break
+it. It's tested against the real database in E2E rather than with a mocked
+query builder, because the SQL is the thing that matters.
+
+**The job.** `OrphanArtistsCleanupJob` has one method with
+`@Cron(CronExpression.EVERY_DAY_AT_3AM, { name, timeZone: 'UTC' })`. Two
+details from the library itself: the enum value is `'0 03 * * *'` (five
+fields, though six with seconds are allowed), and the installed
+`schedule.explorer.js` wraps every job in a try/catch that logs to the
+`Scheduler` logger. Unlike the event emitter there's no option to turn
+that off, so the job has no try/catch of its own. It logs how many artists
+it deleted, since logs are the only sign that a scheduled job ran at all.
+
+**Gotcha: ESM again.** `@nestjs/schedule` 12 is `"type": "module"` too,
+the third package with this problem (after `@nestjs/mongoose` and
+`@nestjs/event-emitter`). It joined both Jest `transformIgnorePatterns`
+before any test ran this time. Its dependency `cron` is CommonJS.
+
+**Testing a job without waiting for 3 AM.** Three layers:
+- unit: the job calls the service and logs the count
+- E2E: the scheduler registered the job with the expected schedule and
+  next run, and calling the job deletes an artist taken off its only song
+  while keeping one still on a song
+- manual: on a temporary 10-second schedule, the built app logged the job
+  firing twice, which shows the scheduler really runs it.
+
+The E2E run also deleted the 2 orphans that were already in the dev
+database. That's the job doing its job, not test leakage.
+
+**The sanity break: forgetting `forRoot()`.** With `ScheduleModule.forRoot()`
+removed, the app booted with no warning, and the test that calls the job
+directly still passed. Only the registry test failed
+(`Nest could not find SchedulerRegistry`). In production that would be a
+cleanup that silently never runs. This is why the registration test exists.
+
+**Known limits, accepted and noted in the job's comment:**
+- Every running instance runs the job. Railway runs one, and a second run
+  finds nothing to delete, so that's fine here. A job that sends invoices
+  would need a lock, a queue or an external scheduler.
+- A song saved with an artist at the moment that artist is deleted as an
+  orphan could fail. That's unlikely at 3 AM on a learning app.
+
+**Lesson:** a scheduled job can fail by never running, which no test of
+its logic will catch. Test that it's registered, too.
+
+**Verified.** `npm test` 164/22 (2 new), `npm run test:e2e` 112/8 (2 new),
+`tsc`, eslint, Prettier and the build are clean.

@@ -8,6 +8,6 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "node_modules/(?!(@nestjs/mongoose|@nestjs/event-emitter)/)"
+    "node_modules/(?!(@nestjs/mongoose|@nestjs/event-emitter|@nestjs/schedule)/)"
   ]
 }
