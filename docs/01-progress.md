@@ -1322,6 +1322,27 @@ CRON scheduling, file upload. Queues left as a stretch goal (needs Redis).
       (Gotcha met on the way: a Homebrew Postgres on `127.0.0.1:5432`
       shadowed Docker's port and made every E2E `beforeAll` hang on
       `role "nestjs" does not exist`; stopping it fixed it.)
-- [ ] Event Emitter
+- [x] Event Emitter: welcome email on signup — `@nestjs/event-emitter`
+      12.0.3, `EventEmitterModule.forRoot()` in `AppModule`.
+      `AuthService.signup` emits `user.created` (`UserCreatedEvent`,
+      `src/users/events/user-created.event.ts`) after the user exists:
+      there rather than in `UsersService.create`, so the seed script
+      doesn't send emails, while REST and GraphQL signup both do. A new
+      `MailModule` holds `MailService` (logs only, no SMTP) and
+      `WelcomeEmailListener` (`@OnEvent(USER_CREATED, { async: true })`).
+      `AuthService` has no mail dependency. No try/catch in the listener:
+      the library's default `suppressErrors: true` logs listener errors.
+      The package is ESM-only, so it joins `@nestjs/mongoose` in both Jest
+      `transformIgnorePatterns`. Tests: signup emits / emits nothing on
+      failure; listener calls the mail service; E2E: a throwing mail
+      service still gives a 201 and is called with the new email. Manual:
+      REST and GraphQL signup both log the welcome line. Sanity: a 3s
+      *blocking* listener made signup 3.1s without `async: true` (0.12s
+      with it), but a 3s *awaited* delay didn't slow signup either way;
+      `suppressErrors: false` + a throwing mail service → 201, then the
+      app process exits on the unhandled rejection. `npm test` 162/21;
+      `npm run test:e2e` 110/8; `tsc`, eslint, Prettier, build clean.
+      Not durable: a crash between emit and send loses the email (queues
+      would fix that).
 - [ ] CRON scheduling
 - [ ] File upload

@@ -4,12 +4,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
 import { authenticator } from 'otplib';
 import * as qrcode from 'qrcode';
 import { UsersService } from '../users/users.service';
 import { SignupDto } from './dto/signup.dto';
 import { User } from '../users/entities/user.entity';
+import {
+  USER_CREATED,
+  UserCreatedEvent,
+} from '../users/events/user-created.event';
 
 // Shown in an authenticator app next to the 6-digit code, so the user can
 // tell which account this entry belongs to.
@@ -30,6 +35,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -46,9 +52,19 @@ export class AuthService {
    * say) unless someone remembered to exclude it too. `role` is a case in
    * point: deliberately left out of this response (not secret, just not
    * needed here) — visible via a login token or `/auth/profile` instead.
+   *
+   * Emits `user.created` once the account exists, so side effects such as
+   * the welcome email live in listeners rather than here. It's emitted in
+   * this method, not in `UsersService.create`, so the seed script (which
+   * calls `create` directly) doesn't send welcome emails. REST and GraphQL
+   * signup both come through here.
    */
   async signup(dto: SignupDto): Promise<Pick<User, 'id' | 'email'>> {
     const user = await this.usersService.create(dto.email, dto.password);
+    this.eventEmitter.emit(
+      USER_CREATED,
+      new UserCreatedEvent(user.id, user.email),
+    );
     return { id: user.id, email: user.email };
   }
 
