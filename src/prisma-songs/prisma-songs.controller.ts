@@ -10,13 +10,10 @@ import {
   Post,
   Put,
   Query,
-  UseGuards,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import {
-  ApiBearerAuth,
   ApiBody,
   ApiExtraModels,
   ApiOperation,
@@ -25,14 +22,12 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { PrismaSongsService, SongWithArtists } from './prisma-songs.service';
-import { Paginated } from '../songs/songs.service';
+import { Paginated } from '../common/pagination/paginated';
 import { CreateSongDto } from '../songs/dto/create-song.dto';
-import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { UpdateSongInput } from '../songs/dto/update-song.input';
 import { Song } from '../songs/entities/song.entity';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { UserRole } from '../users/entities/user.entity';
+import { AdminOnly } from '../auth/decorators/admin-only.decorator';
 
 /**
  * Mirror of `SongsController` at `/prisma/songs`: same routes, guards,
@@ -49,13 +44,9 @@ export class PrismaSongsController {
   constructor(private readonly songsService: PrismaSongsService) {}
 
   /** Create a song. Requires an authenticated `admin`. */
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a song. Requires an authenticated admin.' })
   @ApiResponse({ status: 201, description: 'Song created.', type: Song })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createSongDto: CreateSongDto): Promise<SongWithArtists> {
@@ -111,7 +102,6 @@ export class PrismaSongsController {
    * @throws BadRequestException if the update payload is empty.
    * @throws NotFoundException if no song exists with `id`.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Update a song by id. Only the supplied fields are changed. Requires an authenticated admin.',
@@ -120,11 +110,8 @@ export class PrismaSongsController {
   @ApiBody({ type: CreateSongDto, description: 'Any subset of these fields.' })
   @ApiResponse({ status: 200, description: 'The updated song.', type: Song })
   @ApiResponse({ status: 400, description: 'Empty or invalid payload.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({ status: 404, description: 'No song exists with this id.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put(':id')
   @HttpCode(HttpStatus.OK)
   async update(
@@ -148,16 +135,12 @@ export class PrismaSongsController {
    * Delete a song by id. Requires an authenticated `admin`.
    * @throws NotFoundException if no song exists with `id`.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Delete a song by id. Requires an authenticated admin.',
   })
   @ApiResponse({ status: 204, description: 'Song deleted.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({ status: 404, description: 'No song exists with this id.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {

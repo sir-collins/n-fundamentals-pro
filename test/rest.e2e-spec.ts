@@ -553,11 +553,15 @@ describe('REST API (e2e)', () => {
       }).expect(201);
 
       const list = await http().get(`/songs/${songId}/comments`).expect(200);
-      const comments = list.body as {
-        body: string;
-        authorEmail: string;
-        parentComment: { _id: string; body: string } | null;
-      }[];
+      const comments = (
+        list.body as {
+          data: {
+            body: string;
+            authorEmail: string;
+            parentComment: { _id: string; body: string } | null;
+          }[];
+        }
+      ).data;
       const reply = comments.find((c) => c.body === 'A reply');
       expect(reply?.authorEmail).toBe(adminEmail);
       // populate() replaced the ObjectId with the parent document itself.
@@ -565,6 +569,25 @@ describe('REST API (e2e)', () => {
         _id: rootId,
         body: 'First!',
       });
+    });
+
+    it('pages through comments oldest first', async () => {
+      const page = (n: number) =>
+        http().get(`/songs/${songId}/comments?page=${n}&limit=1`).expect(200);
+
+      const first = (await page(1)).body as {
+        data: { body: string }[];
+        total: number;
+      };
+      const second = (await page(2)).body as typeof first;
+
+      expect(first.total).toBe(2);
+      expect(first.data.map((c) => c.body)).toEqual(['First!']);
+      expect(second.data.map((c) => c.body)).toEqual(['A reply']);
+    });
+
+    it('rejects an out-of-range page size', async () => {
+      await http().get(`/songs/${songId}/comments?limit=101`).expect(400);
     });
 
     it('rejects a reply to a comment on a different song', async () => {

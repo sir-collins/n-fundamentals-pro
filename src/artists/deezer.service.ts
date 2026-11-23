@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { ArtistProfile } from './dto/artist-profile.type';
 
 /** How long one Deezer call may take before we give up on it. */
-export const DEEZER_TIMEOUT_MS = 3000;
+const DEEZER_TIMEOUT_MS = 3000;
 
 /** The parts of Deezer's `/search/artist` response this app reads. */
 interface DeezerArtist {

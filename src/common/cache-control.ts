@@ -7,7 +7,7 @@ import {
 } from 'graphql';
 
 /** How long public, same-for-everyone data may be served from the cache. */
-export const PUBLIC_CACHE_MAX_AGE = 30;
+const PUBLIC_CACHE_MAX_AGE = 30;
 
 /**
  * Apollo cache hint for public data, applied with `@Directive(...)` at the

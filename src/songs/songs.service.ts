@@ -2,15 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateSongDto } from './dto/create-song.dto';
-import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
+import { Paginated } from '../common/pagination/paginated';
 import { Song } from './entities/song.entity';
 import { ArtistsService } from '../artists/artists.service';
-
-/** One page of results, plus the total count across all pages. */
-export interface Paginated<T> {
-  data: T[];
-  total: number;
-}
 
 export interface FindSongOptions {
   /** Join the song's artists in the same query. Defaults to `true`. */

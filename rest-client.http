@@ -343,7 +343,7 @@ Content-Type: application/json
 ### List a song's comments — public, no token needed. The reply's
 # parentComment field comes back as a fully populated object (the
 # parent's real body/authorEmail), not a raw ObjectId string.
-GET {{baseUrl}}/songs/{{songId}}/comments
+GET {{baseUrl}}/songs/{{songId}}/comments?page=1&limit=10
 
 ### Comment on a song that doesn't exist (should 404)
 POST {{baseUrl}}/songs/999999/comments

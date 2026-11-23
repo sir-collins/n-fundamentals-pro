@@ -4,7 +4,7 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
- * `?page=&limit=` on `GET /songs`, and the `songs` query's arguments.
+ * `?page=&limit=` on paginated REST lists, and the `songs` query's arguments.
  * `@Type(() => Number)` converts the query strings, which depends on
  * `transform: true` in the global `ValidationPipe` (see configure-app.ts).
  */

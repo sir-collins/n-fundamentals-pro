@@ -75,3 +75,54 @@ jobs:
       - run: npm run migration:run
       - run: npm run prisma:migrate
       - run: npm run test:e2e
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nestjs
+          POSTGRES_PASSWORD: nestjs
+          POSTGRES_DB: n_fundamentals
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nestjs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: |
+          docker build --target migrate -t music-catalog-api:migrate .
+          docker build --target runtime -t music-catalog-api .
+      # --network host lets the containers reach the service containers on
+      # localhost, with the same env as the other jobs.
+      - name: Apply migrations from the image
+        run: >-
+          docker run --rm --network host
+          -e DB_HOST -e DB_PORT -e DB_USERNAME -e DB_PASSWORD -e DB_NAME
+          music-catalog-api:migrate
+      - name: Start the API and wait for /health
+        run: |
+          docker run -d --name api --network host \
+            -e JWT_SECRET -e DB_HOST -e DB_PORT -e DB_USERNAME \
+            -e DB_PASSWORD -e DB_NAME -e MONGO_URI music-catalog-api
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health; then exit 0; fi
+            sleep 2
+          done
+          docker logs api
+          exit 1

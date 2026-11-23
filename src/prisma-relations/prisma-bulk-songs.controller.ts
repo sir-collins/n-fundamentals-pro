@@ -5,17 +5,10 @@ import {
   HttpStatus,
   Patch,
   Post,
-  UseGuards,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   PrismaRelationsService,
   SongTitleConflictError,
@@ -24,9 +17,7 @@ import { BulkUpdateSongsDto } from './dto/bulk-update-songs.dto';
 import { ImportSongsDto } from './dto/import-songs.dto';
 import { SongWithArtists } from '../prisma-songs/prisma-songs.service';
 import { Song } from '../songs/entities/song.entity';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { UserRole } from '../users/entities/user.entity';
+import { AdminOnly } from '../auth/decorators/admin-only.decorator';
 
 /**
  * Bulk song import and update at `/prisma/songs/bulk`. Kept out of
@@ -43,21 +34,17 @@ export class PrismaBulkSongsController {
    * @throws ConflictException if any title already exists, in the database
    *   or earlier in the batch; nothing is written.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Import several songs with their artists, all or nothing. Requires an authenticated admin.',
   })
   @ApiResponse({ status: 201, description: 'Songs created.', type: [Song] })
   @ApiResponse({ status: 400, description: 'Empty, too many, or invalid.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({
     status: 409,
     description: 'A title already exists; nothing was written.',
   })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
   async importSongs(@Body() body: ImportSongsDto): Promise<SongWithArtists[]> {
@@ -77,7 +64,6 @@ export class PrismaBulkSongsController {
    * errors. Requires an authenticated `admin`.
    * @throws BadRequestException if neither field to change is supplied.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Apply the same releaseDate/duration to several songs. Requires an authenticated admin.',
@@ -88,10 +74,7 @@ export class PrismaBulkSongsController {
     schema: { properties: { count: { type: 'number' } } },
   })
   @ApiResponse({ status: 400, description: 'Nothing to change, or invalid.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Patch('bulk')
   @HttpCode(HttpStatus.OK)
   async updateMany(

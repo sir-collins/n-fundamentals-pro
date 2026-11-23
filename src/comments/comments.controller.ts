@@ -10,6 +10,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,6 +28,8 @@ import { SongsService } from '../songs/songs.service';
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
+import { Paginated } from '../common/pagination/paginated';
 
 /**
  * REST endpoints for song comments, stored in MongoDB. Routes span two
@@ -75,27 +78,37 @@ export class CommentsController {
   }
 
   /**
-   * List every comment on a song. Public. A flat list, with each reply's
-   * immediate parent populated inline.
+   * List a song's comments, one page at a time, oldest first. Public. A
+   * flat list, with each reply's immediate parent populated inline.
    * @throws NotFoundException if no song exists with `songId`.
    */
   @ApiOperation({
     summary:
-      "List a song's comments (flat, replies' parents populated inline).",
+      "List a song's comments, oldest first (?page=&limit=, both optional; replies' parents populated inline).",
   })
-  @ApiResponse({ status: 200, description: "The song's comments." })
+  @ApiResponse({
+    status: 200,
+    description: "A page of the song's comments.",
+    schema: {
+      properties: {
+        data: { type: 'array', items: { type: 'object' } },
+        total: { type: 'number' },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'No song exists with this id.' })
   @Get('songs/:songId/comments')
   async findAllForSong(
     @Param('songId', ParseIntPipe) songId: number,
-  ): Promise<CommentDocument[]> {
+    @Query() pagination: PaginationQueryDto,
+  ): Promise<Paginated<CommentDocument>> {
     const song = await this.songsService.findOne(songId);
 
     if (!song) {
       throw new NotFoundException(`Song with id ${songId} was not found`);
     }
 
-    return await this.commentsService.findAllForSong(songId);
+    return this.commentsService.findAllForSong(songId, pagination);
   }
 
   /**
