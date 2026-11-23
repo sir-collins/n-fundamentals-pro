@@ -7,9 +7,9 @@ import { ArtistsResolver } from './artists.resolver';
 import { OrphanArtistsCleanupJob } from './orphan-artists-cleanup.job';
 
 /**
- * No controller yet — artists are only created indirectly, through songs,
- * for now. Exports `ArtistsService` so `SongsModule` can resolve artist
- * names to real rows.
+ * No REST controller: artists are created through songs. Exports
+ * `ArtistsService` for `SongsModule` and both services for the GraphQL
+ * loaders built in `AppModule`.
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Artist])],

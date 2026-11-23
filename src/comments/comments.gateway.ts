@@ -9,12 +9,9 @@ import { Server, Socket } from 'socket.io';
 import { CommentDocument } from './schemas/comment.schema';
 
 /**
- * Broadcasts new comments/replies to everyone currently viewing a
- * song's comment thread. Rooms are per-song (`song:<id>`) — a client
- * must `subscribeToSong` before it'll receive anything for that song.
- * No CORS config here: the demo page (`public/realtime-comments.html`)
- * is served by this same app, same origin — consistent with deferring
- * CORS until a real cross-origin client actually needs it.
+ * Pushes new comments over Socket.IO to clients in that song's room
+ * (`song:<id>`), which they join with `subscribeToSong`. No CORS config:
+ * the demo page (`public/realtime-comments.html`) is same-origin.
  */
 @WebSocketGateway()
 export class CommentsGateway {

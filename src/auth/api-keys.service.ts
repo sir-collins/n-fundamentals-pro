@@ -19,9 +19,8 @@ export class ApiKeysService {
   ) {}
 
   /**
-   * Mint a new key for `userId`. The raw key is returned here and never
-   * again — only its SHA-256 hash is stored, so this is the one moment it
-   * exists anywhere other than the caller's hands.
+   * Mint a new key for `userId`. The raw key is returned only here; just
+   * its SHA-256 hash is stored.
    */
   async generate(
     userId: number,
@@ -38,7 +37,7 @@ export class ApiKeysService {
     return { id: saved.id, apiKey: rawKey };
   }
 
-  /** List `userId`'s own keys — metadata only, the hash never leaves here. */
+  /** List `userId`'s own keys: metadata only, never the hash. */
   async listForUser(
     userId: number,
   ): Promise<Pick<ApiKey, 'id' | 'label' | 'createdAt' | 'lastUsedAt'>[]> {
@@ -53,9 +52,9 @@ export class ApiKeysService {
 
   /**
    * Delete a key, but only if it belongs to `userId`.
-   * @throws NotFoundException if the id doesn't exist, or belongs to
-   *   someone else — both cases look identical to the caller on purpose,
-   *   so a revoke attempt can't be used to probe which ids exist.
+   * @throws NotFoundException if the id doesn't exist or belongs to someone
+   *   else. Both look identical so revoke can't be used to probe which ids
+   *   exist.
    */
   async revoke(userId: number, keyId: number): Promise<void> {
     const key = await this.apiKeysRepository.findOneBy({ id: keyId });

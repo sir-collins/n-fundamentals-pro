@@ -5,35 +5,30 @@ import { DeezerService } from './deezer.service';
 import { ArtistProfile } from './dto/artist-profile.type';
 
 /**
- * Batches every `Song.artists` lookup made while resolving one GraphQL
- * response into a single `findBySongIds` query — the fix for the N+1 a
- * per-song field resolver would otherwise cause.
+ * Batches every `Song.artists` lookup in one GraphQL response into a single
+ * `findBySongIds` query, avoiding N+1.
  *
- * Must be created fresh per request (see the GraphQL `context` in
- * `app.module.ts`): DataLoader also caches by key, and a loader shared
- * across requests would keep serving whatever it loaded first.
+ * Create one per request (see the GraphQL `context` in `app.module.ts`):
+ * DataLoader caches by key, so a shared loader would serve stale data.
  */
 export function createArtistsBySongLoader(
   artistsService: ArtistsService,
 ): DataLoader<number, Artist[]> {
   return new DataLoader<number, Artist[]>(async (songIds) => {
     const bySong = await artistsService.findBySongIds(songIds);
-    // DataLoader's contract: exactly one result per key, in key order —
-    // the map's own order is whatever the query returned, so re-index it,
-    // and a song with no artists still needs its (empty) slot.
+    // DataLoader needs one result per key, in key order, including an
+    // empty slot for a song with no artists.
     return songIds.map((songId) => bySong.get(songId) ?? []);
   });
 }
 
 /**
- * Per-request loader behind `Artist.profile`, keyed by artist name.
- * Deezer has no batch endpoint, so this can't merge lookups into one
- * call — its job is deduplication (an artist on five songs is one HTTP
- * call, not five) and running the distinct lookups in parallel.
+ * Per-request loader behind `Artist.profile`, keyed by artist name. Deezer
+ * has no batch endpoint, so this only deduplicates names and runs the
+ * lookups in parallel.
  *
- * Each key's failure is returned as that key's `Error` rather than
- * rejecting the whole batch, so one artist's Deezer error only nulls out
- * that artist's `profile`, not every artist in the response.
+ * A failed lookup is returned as that key's `Error` instead of rejecting
+ * the batch, so it nulls out only that artist's `profile`.
  */
 export function createArtistProfileLoader(
   deezerService: DeezerService,

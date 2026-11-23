@@ -2,11 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Field, InputType } from '@nestjs/graphql';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 
-/**
- * Validated shape of an incoming `POST /auth/signup` request body —
- * also used directly as GraphQL's `signup` mutation input
- * (`@InputType()`), so both transports share the exact same validation.
- */
+/** Signup input, shared by `POST /auth/signup` and the GraphQL mutation. */
 @InputType()
 export class SignupDto {
   @ApiProperty()
@@ -14,8 +10,7 @@ export class SignupDto {
   @IsEmail()
   readonly email!: string;
 
-  // bcrypt itself has no minimum length — this floor just rejects
-  // trivially weak passwords before they're ever hashed.
+  // bcrypt has no minimum; this rejects trivially weak passwords.
   @ApiProperty({ minLength: 8 })
   @Field()
   @IsString()

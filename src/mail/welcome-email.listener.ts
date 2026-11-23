@@ -9,16 +9,13 @@ import {
 /**
  * Sends the welcome email when a user signs up.
  *
- * `async: true` starts this on a later tick instead of inside `emit()`.
- * Awaited I/O wouldn't delay signup anyway (`emit()` doesn't wait for the
- * returned promise); what this guards against is *blocking* work in a
- * listener, measured at 3.1s vs 0.12s for a signup with a 3s busy loop.
+ * `async: true` runs this on a later tick instead of inside `emit()`, so
+ * synchronous (blocking) work here can't delay the signup response.
  *
- * No try/catch here on purpose: `@nestjs/event-emitter` wraps every
- * listener and, with its default `suppressErrors: true`, logs a thrown
- * error instead of rethrowing it. Don't turn that off: with
- * `suppressErrors: false` the rejection goes unhandled, and signup still
- * returns 201 but the whole process exits a moment later.
+ * No try/catch on purpose: with `@nestjs/event-emitter`'s default
+ * `suppressErrors: true`, a thrown error is logged, not rethrown. Keep it
+ * on: with `suppressErrors: false` the rejection goes unhandled and the
+ * process exits right after signup returns 201.
  */
 @Injectable()
 export class WelcomeEmailListener {

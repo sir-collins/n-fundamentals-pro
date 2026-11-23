@@ -3,11 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Artist } from './entities/artist.entity';
 
-/**
- * Resolves artist *names* (as sent by clients) to real `Artist` rows,
- * creating them the first time a name is seen. Keeps `SongsService` from
- * needing to know how artist identity/uniqueness works.
- */
+/** Resolves artist names sent by clients to `Artist` rows. */
 @Injectable()
 export class ArtistsService {
   constructor(
@@ -21,9 +17,8 @@ export class ArtistsService {
    * @returns one Artist per unique name in `names` (order not guaranteed).
    */
   async findOrCreateMany(names: string[]): Promise<Artist[]> {
-    // Dedupe the input first — without this, two new names that are the
-    // same string would both try to insert a row with that name and hit
-    // the unique constraint.
+    // Duplicate new names would both be inserted and hit the unique
+    // constraint.
     const uniqueNames = [...new Set(names)];
 
     const existing = await this.artistsRepository.findBy({
@@ -44,9 +39,8 @@ export class ArtistsService {
   }
 
   /**
-   * Every artist on each of `songIds`, in one query — the batch query
-   * behind `createArtistsBySongLoader`. Only `song.id` is selected from
-   * the join, just enough to group artists back under their song.
+   * Every artist on each of `songIds`, in one query; the batch function
+   * behind `createArtistsBySongLoader`.
    * @returns a map keyed by song id; a song with no artists has no entry,
    *   and an artist on two requested songs appears under both.
    */
@@ -78,14 +72,11 @@ export class ArtistsService {
   }
 
   /**
-   * Delete every artist that is on no song, in one `DELETE`. Closes
-   * Project 2's known gap on the TypeORM side: an artist taken off every
-   * song it was on stayed in the table. Run nightly by
+   * Delete every artist that is on no song, in one `DELETE`. Run nightly by
    * `OrphanArtistsCleanupJob`.
    *
-   * The orphan subquery is built from the `artist.songs` relation, so
-   * TypeORM supplies the join-table and column names instead of this
-   * method hard-coding them.
+   * The subquery is built from the `artist.songs` relation so TypeORM
+   * supplies the join-table and column names rather than hard-coding them.
    * @returns how many artists were deleted.
    */
   async deleteOrphans(): Promise<number> {

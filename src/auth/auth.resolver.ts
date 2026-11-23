@@ -11,10 +11,8 @@ import type { AuthUser } from './auth-user';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 /**
- * GraphQL layer for `auth` — scoped tightly to signup/login/profile,
- * reusing the exact same `AuthService` `AuthController` already uses.
- * 2FA and API keys deliberately stay REST-only; not named by this
- * roadmap step, and out of proportion to add here.
+ * GraphQL signup/login/profile, backed by the same `AuthService` as REST.
+ * 2FA and API key management are REST-only.
  */
 @Resolver(() => User)
 export class AuthResolver {
@@ -26,12 +24,9 @@ export class AuthResolver {
   }
 
   /**
-   * Unlike REST's `login()`, this doesn't go through
-   * `AuthGuard('local')`/`LocalStrategy` — Passport's local strategy
-   * reads credentials off the request body by convention, which doesn't
-   * map cleanly onto GraphQL args. `validateUser` is called directly
-   * instead, throwing exactly what `LocalStrategy.validate` already
-   * would on a bad credential pair.
+   * Calls `validateUser` directly instead of using `LocalStrategy`, which
+   * reads credentials from the request body and doesn't map onto GraphQL
+   * args. Throws the same error `LocalStrategy` would.
    * @throws UnauthorizedException if the credentials don't match a user.
    */
   @Mutation(() => LoginResult)
@@ -52,7 +47,7 @@ export class AuthResolver {
       : { twoFactorRequired: true, tempToken: result.tempToken };
   }
 
-  /** The authenticated user's own identity — GraphQL's `GET /auth/profile`. */
+  /** The authenticated user's own identity; mirrors `GET /auth/profile`. */
   @UseGuards(GqlAuthGuard)
   @Query(() => User)
   profile(@CurrentUser() user: AuthUser): AuthUser {

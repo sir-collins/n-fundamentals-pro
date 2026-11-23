@@ -1,10 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 /**
- * Stand-in for a real mail provider: logs what it would send. Sending
- * real email needs SMTP credentials and is a separate concern. A real
- * implementation can replace this class without touching signup, which
- * only emits an event and never sees this service.
+ * Stand-in for a real mail provider: logs what it would send. A real
+ * implementation can replace it without touching signup, which only emits
+ * an event.
  */
 @Injectable()
 export class MailService {

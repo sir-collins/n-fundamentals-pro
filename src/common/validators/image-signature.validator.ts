@@ -38,15 +38,13 @@ export function detectImageType(buffer: Buffer): ImageType | null {
 }
 
 /**
- * `ParseFilePipe` validator: accepts only real PNG/JPEG/WebP bytes.
+ * `ParseFilePipe` validator: accepts only real PNG/JPEG/WebP bytes, never
+ * trusting the client's mimetype.
  *
- * Used instead of Nest's own `FileTypeValidator`, which does the same
- * magic-number check through the ESM-only `file-type` package. Under this
- * project's Jest setup that package can't load: the validator then
- * rejects every file, and the `--experimental-vm-modules` flag that fixes
- * it breaks 13 other suites. Three signatures are all this app needs.
- * Needs the file in memory (`buffer`), so don't give the interceptor a
- * disk storage.
+ * Used instead of Nest's `FileTypeValidator`, whose ESM-only `file-type`
+ * dependency can't load under this project's Jest setup (it then rejects
+ * every file). Needs the file in memory (`buffer`), so don't give the
+ * interceptor disk storage.
  */
 export class ImageSignatureValidator extends FileValidator {
   constructor() {

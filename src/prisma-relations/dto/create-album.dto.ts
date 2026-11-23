@@ -1,10 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
 
-/**
- * Validated body of `POST /prisma/artists/:id/albums`. The artist comes
- * from the URL, not the body — the album is always created under it.
- */
+/** Body of `POST /prisma/artists/:id/albums`; the artist comes from the URL. */
 export class CreateAlbumDto {
   @ApiProperty({ example: 'After Hours' })
   @IsString()

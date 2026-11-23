@@ -5,9 +5,8 @@ import { AuthService } from '../auth.service';
 import { User } from '../../users/entities/user.entity';
 
 /**
- * Passport strategy backing `POST /auth/login`. Authenticates against the
- * `email`/`password` fields on the request body — passport-local defaults
- * to `username`/`password`, hence the `usernameField` override below.
+ * Email/password strategy behind `POST /auth/login`. `usernameField` is
+ * overridden because passport-local expects `username` by default.
  */
 @Injectable()
 export class LocalStrategy extends PassportStrategy(Strategy) {

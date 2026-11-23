@@ -7,14 +7,11 @@ import { PrismaClient } from '../generated/prisma/client';
 export const PRISMA_SCHEMA = 'prisma';
 
 /**
- * The generated Prisma client, made injectable. Extending it (rather than
- * wrapping it) means callers use `prisma.song.findMany()` directly, with
- * every generated type intact.
+ * The generated Prisma client as an injectable provider.
  *
- * Prisma 7 talks to Postgres through a driver adapter — here `pg`, the same
- * driver TypeORM already uses. The adapter, not the URL, carries the schema:
- * `?schema=` in a connection string is a CLI convention (prisma.config.ts),
- * and the adapter takes it as an explicit option instead.
+ * Prisma 7 connects through a driver adapter (`pg`, the same driver TypeORM
+ * uses). The adapter, not the URL, carries the schema: `?schema=` is only
+ * read by the CLI (prisma.config.ts), so the runtime passes it explicitly.
  */
 @Injectable()
 export class PrismaService
@@ -36,14 +33,11 @@ export class PrismaService
     });
   }
 
-  // Connect at startup, so a bad connection fails the boot instead of
-  // the first request that happens to need Prisma.
+  // Connect eagerly so a bad connection fails the boot, not the first request.
   async onModuleInit(): Promise<void> {
     await this.$connect();
   }
 
-  // Release the pool on shutdown (app.close(), SIGTERM with shutdown
-  // hooks), so tests and deploys don't leave connections hanging open.
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }

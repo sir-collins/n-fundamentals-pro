@@ -16,10 +16,8 @@ import { ApiKey } from './entities/api-key.entity';
   imports: [
     UsersModule,
     PassportModule,
-    // Secret now comes from validated env config (src/config/env.validation.ts)
-    // instead of a hardcoded literal — JwtStrategy reads the same
-    // JWT_SECRET via its own injected ConfigService, so signing and
-    // verifying still can't silently drift onto different values.
+    // JwtStrategy reads the same JWT_SECRET, so signing and verifying
+    // can't drift onto different values.
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

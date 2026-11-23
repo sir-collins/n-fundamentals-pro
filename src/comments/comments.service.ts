@@ -7,12 +7,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { CommentsGateway } from './comments.gateway';
 import { PUB_SUB } from './pub-sub.provider';
 
-/**
- * Backed by MongoDB via Mongoose. Follows `SongsService`'s division of
- * responsibility: no try/catch here — plain async methods, `null` for
- * "not found," rejections propagate to the controller, which owns all
- * HTTP-status handling.
- */
+/** Comment storage in MongoDB, plus real-time fan-out of new comments. */
 @Injectable()
 export class CommentsService {
   constructor(
@@ -23,14 +18,10 @@ export class CommentsService {
   ) {}
 
   /**
-   * Create a comment on `songId`, authored by the caller. Broadcasts it
-   * to everyone currently subscribed to that song's WebSocket room
-   * (`CommentsGateway`) and to any GraphQL `commentAdded` subscribers
-   * (`CommentsResolver`) before returning — two independent real-time
-   * mechanisms over the same event, neither replacing the other.
+   * Create a comment on `songId` and push it to Socket.IO and GraphQL
+   * subscribers.
    * @throws BadRequestException if `parentCommentId` doesn't exist, or
-   *   belongs to a different song — a reply must live on the same song
-   *   as the comment it replies to.
+   *   belongs to a different song.
    */
   async create(
     songId: number,
@@ -64,10 +55,7 @@ export class CommentsService {
     return comment;
   }
 
-  /**
-   * List every comment on `songId`, flat (not a nested tree) with each
-   * reply's immediate parent populated inline.
-   */
+  /** Every comment on `songId`, flat, with each reply's parent populated. */
   findAllForSong(songId: number): Promise<CommentDocument[]> {
     return this.commentModel.find({ songId }).populate('parentComment').exec();
   }

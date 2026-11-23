@@ -6,22 +6,16 @@ import {
 } from 'typeorm';
 
 /**
- * A long-lived credential for machine-to-machine access — the
- * non-Passport counterpart to a JWT session, for callers with no human
- * around to type a password (a script, a cron job, another service).
+ * A long-lived credential for machine-to-machine access (scripts, cron
+ * jobs, other services).
  *
- * `hashedKey` is a SHA-256 hex digest, not a bcrypt hash — deliberately.
- * The raw key is already high-entropy (32 random bytes), so there's
- * nothing for bcrypt's slowness to meaningfully defend against, and
- * bcrypt's per-call random salt would make a direct `WHERE hashedKey = ?`
- * lookup impossible (every row would need `bcrypt.compare()` against it
- * individually). SHA-256 is deterministic, so the same raw key always
- * hashes to the same value and a plain indexed lookup — `unique: true`
- * below doubles as that index — works.
+ * `hashedKey` is SHA-256, not bcrypt: the raw key is 32 random bytes, so
+ * bcrypt's slowness adds nothing, and its random salt would rule out a
+ * direct indexed `WHERE hashedKey = ?` lookup (`unique: true` provides the
+ * index).
  *
- * `userId` is a plain column, not a `@ManyToOne` relation — this project
- * hasn't needed a real TypeORM relation for a foreign key yet, so this
- * keeps the same simplicity level rather than introducing one early.
+ * `userId` is a plain column rather than a `@ManyToOne` relation, since
+ * nothing needs to load the user through it.
  */
 @Entity()
 export class ApiKey {
@@ -34,19 +28,14 @@ export class ApiKey {
   @Column({ unique: true })
   hashedKey!: string;
 
-  // Caller-supplied metadata (e.g. "CI key") so a list of keys is
-  // distinguishable when deciding which one to revoke — not required for
-  // the mechanism to work.
+  // Optional, so users can tell keys apart when revoking one.
   @Column({ type: 'varchar', nullable: true })
   label!: string | null;
 
   @CreateDateColumn()
   createdAt!: Date;
 
-  // Set by ApiKeyGuard on every successful use. Not required for the
-  // feature to work — just a realistic touch (mirrors what a GitHub/Stripe
-  // key dashboard shows) that also happens to prove, during verification,
-  // that the guard's lookup path actually ran.
+  // Updated on every successful key lookup (see ApiKeysService.validateKey).
   @Column({ type: 'timestamp', nullable: true })
   lastUsedAt!: Date | null;
 }

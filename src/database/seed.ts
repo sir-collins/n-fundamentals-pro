@@ -10,25 +10,17 @@ import { User, UserRole } from '../users/entities/user.entity';
 const logger = new Logger('Seed');
 
 /**
- * Populates a fresh database with a couple of demo rows, so a new clone
- * isn't a totally empty app. Boots the full Nest DI container (no HTTP
- * listener) via `createApplicationContext`, so seeding goes through the
- * same services/validation the app itself uses — never raw SQL inserts
- * that would bypass password hashing or duplicate-email checks.
- *
- * Safe to run more than once: a user that already exists is skipped
- * (logged, not a crash) rather than failing the whole script.
+ * Seeds demo users and a song. Goes through the app's own services (via
+ * `createApplicationContext`) so passwords are hashed as in normal signup.
+ * Safe to re-run: existing users are skipped.
  */
 async function seed() {
   const app = await NestFactory.createApplicationContext(AppModule);
 
   const usersService = app.get(UsersService);
   const songsService = app.get(SongsService);
-  // UsersService.create deliberately has no `role` parameter at all — see
-  // its own doc comment — so a demo admin account is promoted the same
-  // way rest-client.http documents doing it for a real account: a direct,
-  // out-of-band repository write, never a change to UsersService's own
-  // signup contract.
+  // UsersService.create has no `role` parameter by design, so the admin is
+  // promoted with a direct repository write.
   const usersRepository = app.get<Repository<User>>(getRepositoryToken(User));
 
   await createUser(usersService, 'admin@example.com', 'correcthorsebattery');

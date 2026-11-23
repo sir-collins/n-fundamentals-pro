@@ -4,10 +4,10 @@ import { PrismaSongsController } from './prisma-songs.controller';
 import { PrismaSongsService } from './prisma-songs.service';
 
 /**
- * The Prisma rebuild of the songs feature (Project 9), served at
- * `/prisma/songs`. Compare with `SongsModule`: no `forFeature([...])`
- * registration and no `ArtistsModule` — `PrismaService` already exposes
- * every model, and artist lookup happens inside the song queries.
+ * The songs feature implemented with Prisma at `/prisma/songs`, for
+ * comparison with the TypeORM `SongsModule`. No `forFeature` or
+ * `ArtistsModule` needed: `PrismaService` exposes every model, and artists
+ * are resolved inside the song queries.
  */
 @Module({
   imports: [PrismaModule],
