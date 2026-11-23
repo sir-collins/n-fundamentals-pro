@@ -6,24 +6,14 @@ export enum UserRole {
   ADMIN = 'admin',
 }
 
-// Registers the enum as a real GraphQL type (name shows up in the schema
-// as `UserRole`) — without this, `@Field(() => UserRole)` below has no
-// schema representation to point at.
 registerEnumType(UserRole, { name: 'UserRole' });
 
 /**
- * A registered user. `password` holds a bcrypt hash, never the plaintext
- * — see `UsersService.create` for where that hashing happens, and
- * `AuthService` for where the hash is stripped before crossing the HTTP
- * boundary.
+ * A registered user. `password` holds a bcrypt hash.
  *
- * `@ObjectType()` only decorates `id`/`email`/`role` with `@Field()` —
- * `password`/`twoFactorSecret`/`isTwoFactorEnabled` are deliberately left
- * undecorated. Unlike a REST DTO (where leaving a field out means
- * remembering to omit it every time), an undecorated field simply has no
- * corresponding entry in the generated GraphQL schema at all — a
- * structural guarantee these can never leak via GraphQL, not a
- * "we were careful" one.
+ * Only `id`, `email` and `role` have `@Field()`. Every other column is left
+ * undecorated, so it doesn't exist in the GraphQL schema and can't leak
+ * through it.
  */
 @ObjectType()
 @Entity()
@@ -39,38 +29,30 @@ export class User {
   @Column()
   password!: string;
 
-  // Default here is a safety net for any row inserted outside
-  // UsersService.create — the real control point is that `create` never
-  // accepts a role parameter at all, so nothing can hand out 'admin' via
-  // signup.
+  // Safety net for rows inserted outside UsersService.create, which never
+  // accepts a role.
   @Field(() => UserRole)
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role!: UserRole;
 
-  // Plain text for now — a known, deliberate gap (same treatment as the
-  // hardcoded JWT secret): a real production system would encrypt this at
-  // rest. `null` until the user has generated a secret via
-  // POST /auth/2fa/generate.
+  // Stored in plain text, a known gap: production should encrypt it at
+  // rest. `null` until POST /auth/2fa/generate.
   //
-  // type: 'varchar' is explicit here, not inferred — TypeScript's
-  // `string | null` union reflects as just "Object" at runtime, which
-  // TypeORM can't map to a Postgres column type on its own.
+  // `type` is explicit because `string | null` reflects as `Object` at
+  // runtime, which TypeORM can't map to a column type.
   @Column({ type: 'varchar', nullable: true })
   twoFactorSecret!: string | null;
 
   @Column({ default: false })
   isTwoFactorEnabled!: boolean;
 
-  // The TOTP time step (Unix seconds / 30) of the last code this user
-  // successfully spent — replay protection: a code is only accepted if its
-  // step is strictly later, so each code works once. `null` until the
-  // first one is used. Also undecorated for GraphQL, like the fields above.
+  // TOTP step (Unix seconds / 30) of the last code this user spent. Replay
+  // protection: a code is accepted only if its step is strictly later.
   @Column({ type: 'integer', nullable: true })
   lastTotpStep!: number | null;
 
-  // Filename of the user's avatar inside `<UPLOADS_DIR>/avatars`, generated
-  // by the server (never the client's filename). `null` until one is
-  // uploaded. Undecorated for GraphQL: avatars are REST-only.
+  // Server-generated filename inside `<UPLOADS_DIR>/avatars`, never the
+  // client's. Avatars are REST-only.
   @Column({ type: 'varchar', nullable: true })
   avatarPath!: string | null;
 }

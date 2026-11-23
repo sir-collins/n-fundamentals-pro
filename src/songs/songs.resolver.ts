@@ -10,7 +10,7 @@ import {
   Resolver,
 } from '@nestjs/graphql';
 import { SongsService } from './songs.service';
-import { CreateSongDto } from './dto/create-song-dto';
+import { CreateSongDto } from './dto/create-song.dto';
 import { UpdateSongInput } from './dto/update-song.input';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { PaginatedSongs } from './dto/paginated-songs.type';
@@ -23,16 +23,9 @@ import { Artist } from '../artists/entities/artist.entity';
 import type { GqlContext } from '../common/graphql-context';
 
 /**
- * GraphQL layer for `songs` — a second API surface over the exact same
- * `SongsService` the REST `SongsController` already uses, no business
- * logic duplicated here. `NotFoundException` thrown below is formatted
- * for GraphQL by `HttpExceptionFilter` (same class, same messages as
- * `SongsController`'s REST equivalents) rather than a REST-style thrown
- * response object.
- *
- * Mutations are guarded exactly like their REST equivalents —
- * `GqlAuthGuard` (JWT, GraphQL's counterpart to `AuthGuard('jwt')`) then
- * `RolesGuard`, same order/pairing as `SongsController`.
+ * GraphQL API for songs over the same `SongsService` as `SongsController`,
+ * with the same guards and error messages. `AllExceptionsFilter` formats
+ * the `NotFoundException`s thrown here as GraphQL errors.
  */
 @Resolver(() => Song)
 export class SongsResolver {

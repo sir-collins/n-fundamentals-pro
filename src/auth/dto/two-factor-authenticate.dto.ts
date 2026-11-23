@@ -1,11 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, Length } from 'class-validator';
 
-/** Validated shape of a `POST /auth/2fa/authenticate` request body. */
+/** Body of `POST /auth/2fa/authenticate`. */
 export class TwoFactorAuthenticateDto {
-  // The short-lived token login returned when it saw isTwoFactorEnabled —
-  // this is the proof the password check already succeeded, not a real
-  // access token itself.
+  // Proof the password check succeeded; not usable as an access token.
   @ApiProperty({
     description: 'The tempToken returned by login when 2FA is enabled',
   })

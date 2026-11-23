@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CreateSongDto } from './dto/create-song-dto';
+import { CreateSongDto } from './dto/create-song.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { Song } from './entities/song.entity';
 import { ArtistsService } from '../artists/artists.service';
@@ -101,8 +101,6 @@ export class SongsService {
    * @returns whether a song was found and removed.
    */
   async remove(id: number): Promise<boolean> {
-    // delete() issues a DELETE WHERE id = ... directly — no need to fetch
-    // the row first. `affected` tells us whether a row actually matched.
     const result = await this.songsRepository.delete(id);
     return result.affected !== 0;
   }

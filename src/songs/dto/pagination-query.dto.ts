@@ -4,11 +4,9 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
- * Validated shape of `?page=&limit=` on `GET /songs` — reused directly
- * as the GraphQL `songs` query's arguments via `@ArgsType()`. Query
- * string values always arrive as strings — `@Type(() => Number)`
- * converts them before `class-validator` runs, which requires
- * `transform: true` on the global `ValidationPipe` (set in main.ts).
+ * `?page=&limit=` on `GET /songs`, and the `songs` query's arguments.
+ * `@Type(() => Number)` converts the query strings, which depends on
+ * `transform: true` in the global `ValidationPipe` (see configure-app.ts).
  */
 @ArgsType()
 export class PaginationQueryDto {

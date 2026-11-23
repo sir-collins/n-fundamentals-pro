@@ -4,9 +4,8 @@ import { IsNull, LessThan, Or, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from './entities/user.entity';
 
-// bcrypt's cost factor — how many rounds of hashing it does. Higher is
-// slower (both for an attacker brute-forcing guesses, and for us on every
-// signup/login), 10 is a common default that keeps that trade-off sane.
+// bcrypt cost factor: 10 is the common default balancing brute-force
+// resistance against signup/login latency.
 const SALT_ROUNDS = 10;
 
 @Injectable()
@@ -17,8 +16,7 @@ export class UsersService {
   ) {}
 
   /**
-   * Create a user, hashing `password` before it ever touches the
-   * database.
+   * Create a user with a bcrypt-hashed password.
    * @throws ConflictException if `email` is already registered.
    */
   async create(email: string, password: string): Promise<User> {
@@ -29,9 +27,7 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-    // Deliberately no role parameter on this method — every user created
-    // through signup is 'user', full stop. Nothing here can hand out
-    // 'admin' from client input.
+    // No role parameter on purpose, so client input can never grant 'admin'.
     const user = this.usersRepository.create({
       email,
       password: hashedPassword,
@@ -61,13 +57,13 @@ export class UsersService {
   }
 
   /**
-   * Spend a TOTP step for a user: record `step` as their last-used one,
-   * but only if it's strictly later than whatever was spent before.
+   * Record `step` as the user's last-used TOTP step, only if it's strictly
+   * later than the one spent before.
    *
-   * Deliberately one conditional UPDATE, not "read lastTotpStep, compare,
-   * then save" — with read-then-save, two requests carrying the same code
-   * can both read the old value before either writes, and both succeed.
-   * Postgres lets only one of two concurrent UPDATEs match this WHERE.
+   * One conditional UPDATE rather than read-compare-save: with
+   * read-then-save, two requests carrying the same code could both read the
+   * old value and both succeed. Postgres lets only one concurrent UPDATE
+   * match this WHERE.
    * @returns `true` if the step was recorded (the code may be accepted),
    *   `false` if it — or a later one — was already spent.
    */

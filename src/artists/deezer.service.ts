@@ -26,16 +26,15 @@ interface DeezerSearchResponse {
 }
 
 /**
- * Thin client for Deezer's public API (no key needed), behind
- * `Artist.profile`. Injectable so tests can swap it out with
- * `overrideProvider` instead of reaching the real internet.
+ * Client for Deezer's public API (no key needed), behind `Artist.profile`.
+ * Tests replace it with `overrideProvider`.
  */
 @Injectable()
 export class DeezerService {
   constructor(private readonly configService: ConfigService) {}
 
   /**
-   * Looks `name` up on Deezer.
+   * Look `name` up on Deezer.
    * @returns the first result whose name matches exactly (ignoring case),
    *   or `null` if Deezer has no such artist — a search always returns
    *   *someone*, and a stranger's profile is worse than none.

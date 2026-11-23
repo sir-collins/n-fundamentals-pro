@@ -1,11 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it } from '@jest/globals';
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaSongsController } from './prisma-songs.controller';
 import { PrismaSongsService, SongWithArtists } from './prisma-songs.service';
 
@@ -44,12 +40,10 @@ describe('PrismaSongsController', () => {
     await expect(controller.findOne(999)).rejects.toThrow(NotFoundException);
   });
 
-  it('wraps an unexpected failure as a 500, not a 404', async () => {
+  it('lets an unexpected failure reach the global filter', async () => {
     songsService.findOne.mockRejectedValue(new Error('db down'));
 
-    await expect(controller.findOne(1)).rejects.toThrow(
-      InternalServerErrorException,
-    );
+    await expect(controller.findOne(1)).rejects.toThrow('db down');
   });
 
   it('rejects an empty update without calling the service', async () => {

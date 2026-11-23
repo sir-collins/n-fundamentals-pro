@@ -6,10 +6,10 @@ import { PrismaLyricsController } from './prisma-lyrics.controller';
 import { PrismaRelationsService } from './prisma-relations.service';
 
 /**
- * Project 9's relations: Artist → Albums (one-to-many) at
+ * Prisma relations and bulk operations: Artist → Albums (one-to-many) at
  * `/prisma/artists`, Song → Lyrics (one-to-one) at
- * `/prisma/songs/:id/lyrics`. Plus the bulk operations: albums in bulk,
- * orphan-artist cleanup, and `PATCH /prisma/songs/bulk`.
+ * `/prisma/songs/:id/lyrics`, and bulk song import/update at
+ * `/prisma/songs/bulk`.
  */
 @Module({
   imports: [PrismaModule],

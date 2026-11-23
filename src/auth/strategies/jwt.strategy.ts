@@ -6,16 +6,11 @@ import { UserRole } from '../../users/entities/user.entity';
 import type { AuthUser } from '../auth-user';
 
 /**
- * Passport strategy backing any route guarded with `AuthGuard('jwt')`.
- * Passport itself extracts the token from the `Authorization: Bearer ...`
- * header and verifies its signature and expiry before `validate` ever
- * runs — a missing/invalid/expired token 401s without reaching this class.
+ * Bearer-token strategy behind `AuthGuard('jwt')`.
  *
- * `validate` trusts the decoded payload directly as `req.user`, with no
- * database re-lookup — that's the point of a self-contained JWT (no DB
- * round trip to authenticate a request). Trade-off, accepted deliberately
- * for now: a user deleted or changed after a token was issued still
- * passes until that token's own expiry.
+ * Trusts the decoded payload as `req.user` without a database lookup.
+ * Trade-off: a user deleted or changed after a token was issued still
+ * passes until the token expires.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -23,21 +18,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // Read directly from validated config rather than importing a
-      // shared literal from auth.module.ts — JwtModule.registerAsync
-      // there reads the same JWT_SECRET key, so signing and verifying
-      // still can't silently drift onto different values.
+      // Same key JwtModule signs with in auth.module.ts.
       secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
     });
   }
 
   /**
-   * @throws UnauthorizedException if this is a short-lived `tempToken`
-   *   from a pending 2FA login rather than a real session — otherwise
-   *   it's still a validly-signed JWT and would silently work as a full
-   *   session on any guarded route, defeating 2FA entirely. This is the
-   *   one place every `AuthGuard('jwt')`-protected route goes through, so
-   *   the check belongs here rather than repeated per-route.
+   * @throws UnauthorizedException if this is a pending-2FA `tempToken`. It
+   *   is validly signed, so without this check it would work as a full
+   *   session on every JWT-guarded route and bypass 2FA.
    */
   validate(payload: {
     sub: number;

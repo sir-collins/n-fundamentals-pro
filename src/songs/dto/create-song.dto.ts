@@ -9,11 +9,8 @@ import {
 } from 'class-validator';
 
 /**
- * Validated shape of an incoming "create song" request body. Enforced
- * globally by the `ValidationPipe` registered in main.ts — applies to
- * both REST (`@Body()`) and GraphQL (`@Args('input')`) since it's the
- * same global pipe either way. `@InputType()` also makes this class
- * usable directly as the `createSong` mutation's input type.
+ * Body of `POST /songs` and input of the `createSong` mutation. The global
+ * `ValidationPipe` validates it on both APIs.
  */
 @InputType()
 export class CreateSongDto {
@@ -38,8 +35,8 @@ export class CreateSongDto {
   @IsDateString()
   readonly releaseDate!: string;
 
-  // @IsMilitaryTime validates an "HH:MM" 24h time string — reused here for
-  // song duration (e.g. "03:45") rather than a time of day.
+  // @IsMilitaryTime checks the "HH:MM" format; here it is a duration, not a
+  // time of day.
   @ApiProperty({ example: '03:45', description: 'Song duration, HH:MM' })
   @Field()
   @IsNotEmpty()

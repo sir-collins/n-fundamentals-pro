@@ -8,7 +8,6 @@ import {
   ParseIntPipe,
   Put,
   UseGuards,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -34,10 +33,8 @@ const lyricsSchema = {
 };
 
 /**
- * A song's lyrics — the one-to-one side of Project 9's relations, nested
- * under `/prisma/songs/:id`. A separate controller so `/prisma/songs`
- * responses stay identical to `/songs`; the routes don't collide with
- * `PrismaSongsController`'s, which are one segment deep.
+ * A song's lyrics (one-to-one) at `/prisma/songs/:id/lyrics`. Kept out of
+ * `PrismaSongsController` so that one stays a mirror of `SongsController`.
  */
 @ApiTags('prisma-relations')
 @Controller('prisma/songs')
@@ -58,21 +55,13 @@ export class PrismaLyricsController {
   @Get(':id/lyrics')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<Lyrics> {
-    try {
-      const lyrics = await this.relationsService.findLyrics(id);
+    const lyrics = await this.relationsService.findLyrics(id);
 
-      if (!lyrics) {
-        throw new NotFoundException(`Song with id ${id} has no lyrics`);
-      }
-
-      return lyrics;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to fetch lyrics');
+    if (!lyrics) {
+      throw new NotFoundException(`Song with id ${id} has no lyrics`);
     }
+
+    return lyrics;
   }
 
   /**
@@ -102,23 +91,15 @@ export class PrismaLyricsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() upsertLyricsDto: UpsertLyricsDto,
   ): Promise<Lyrics> {
-    try {
-      const lyrics = await this.relationsService.upsertLyrics(
-        id,
-        upsertLyricsDto,
-      );
+    const lyrics = await this.relationsService.upsertLyrics(
+      id,
+      upsertLyricsDto,
+    );
 
-      if (!lyrics) {
-        throw new NotFoundException(`Song with id ${id} was not found`);
-      }
-
-      return lyrics;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to save lyrics');
+    if (!lyrics) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
     }
+
+    return lyrics;
   }
 }

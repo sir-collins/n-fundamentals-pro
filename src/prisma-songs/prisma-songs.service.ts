@@ -3,25 +3,21 @@ import { Prisma } from '../generated/prisma/client';
 import type { Artist, Song } from '../generated/prisma/client';
 import { isNotFound } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSongDto } from '../songs/dto/create-song-dto';
+import { CreateSongDto } from '../songs/dto/create-song.dto';
 import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
 import { UpdateSongInput } from '../songs/dto/update-song.input';
 import { Paginated } from '../songs/songs.service';
 
-/** A song with its artists — the shape every method here returns. */
 export type SongWithArtists = Song & { artists: Artist[] };
 
-// Every query loads artists, so responses match GET /songs exactly.
-// Exported for the bulk import (PrismaRelationsService.importSongs).
+// Every query loads artists so responses match GET /songs exactly.
 export const withArtists = { artists: true } as const;
 
 /**
- * The Prisma rebuild of `SongsService` (Project 9) — same inputs, same
- * outputs, same `null`/`false` for "not found", so `PrismaSongsController`
- * can mirror `SongsController` line for line and the two can be compared.
- *
- * No `ArtistsService` here: resolving artist names to rows (created on
- * first use) is a nested `connectOrCreate` inside the song query itself.
+ * Prisma counterpart of `SongsService`: same inputs, outputs and
+ * `null`/`false` for "not found", so the two controllers stay comparable.
+ * Artist names are resolved by a nested `connectOrCreate` instead of an
+ * `ArtistsService`.
  */
 @Injectable()
 export class PrismaSongsService {
@@ -42,14 +38,10 @@ export class PrismaSongsService {
     page,
     limit,
   }: PaginationQueryDto): Promise<Paginated<SongWithArtists>> {
-    // Prisma has no findAndCount — the page and the total are two queries,
-    // so they run as one batch transaction. The transaction alone isn't
-    // enough: under Postgres's default Read Committed, every statement
-    // takes a fresh snapshot, even inside a transaction, so a song created
-    // between the two could still make `data` and `total` disagree.
-    // RepeatableRead gives both queries the same snapshot. `orderBy` keeps
-    // pages stable: without it Postgres may return rows in any order, so
-    // page 2 could repeat or skip rows from page 1.
+    // Prisma has no findAndCount, so page and total are two queries.
+    // RepeatableRead gives both the same snapshot; under the default Read
+    // Committed a concurrent insert could make `data` and `total` disagree.
+    // `orderBy` keeps pages stable across requests.
     const [data, total] = await this.prisma.$transaction(
       [
         this.prisma.song.findMany({
@@ -72,10 +64,9 @@ export class PrismaSongsService {
   }
 
   /**
-   * Update only the supplied fields of the song with `id`, in one query —
-   * where TypeORM loads the row, merges, then saves. Supplied `artists`
-   * replace the current ones (`set: []` clears the links first; without
-   * it `connectOrCreate` would only add).
+   * Update the supplied fields in one query (TypeORM loads, merges, then
+   * saves). Supplied `artists` replace the current ones: `set: []` clears
+   * the links first, otherwise `connectOrCreate` would only add.
    * @returns the updated song, or `null` if no song exists with `id`.
    */
   async update(
@@ -120,13 +111,10 @@ export class PrismaSongsService {
   }
 }
 
-/**
- * Artist names → `connectOrCreate` entries, duplicates dropped. Exported
- * for the bulk import (PrismaRelationsService.importSongs).
- */
+/** Artist names to `connectOrCreate` entries. */
 export function toArtists(names: string[]) {
-  // Two entries for the same new name would both try to create it and
-  // the second would hit the unique constraint on `name`.
+  // Deduplicated: two entries for the same new name would both try to
+  // create it, and the second would violate the unique constraint.
   return [...new Set(names)].map((name) => ({
     where: { name },
     create: { name },

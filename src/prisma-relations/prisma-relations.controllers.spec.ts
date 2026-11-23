@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from '@jest/globals';
 import {
   BadRequestException,
   ConflictException,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import type { Album, Lyrics } from '../generated/prisma/client';
@@ -78,12 +77,10 @@ describe('Prisma relations controllers', () => {
       );
     });
 
-    it('wraps an unexpected failure as a 500', async () => {
+    it('lets an unexpected failure reach the global filter', async () => {
       service.addAlbum.mockRejectedValue(new Error('db down'));
 
-      await expect(artists.addAlbum(1, album)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(artists.addAlbum(1, album)).rejects.toThrow('db down');
     });
   });
 
@@ -109,12 +106,10 @@ describe('Prisma relations controllers', () => {
       );
     });
 
-    it('wraps an unexpected failure as a 500, not a 404', async () => {
+    it('lets an unexpected failure reach the global filter', async () => {
       service.findLyrics.mockRejectedValue(new Error('db down'));
 
-      await expect(lyrics.findOne(7)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(lyrics.findOne(7)).rejects.toThrow('db down');
     });
   });
 
@@ -157,12 +152,12 @@ describe('Prisma relations controllers', () => {
       ).toEqual({ count: 2 });
     });
 
-    it('wraps an unexpected bulk failure as a 500', async () => {
+    it('lets an unexpected bulk failure reach the global filter', async () => {
       service.updateSongs.mockRejectedValue(new Error('db down'));
 
       await expect(
         bulkSongs.updateMany({ ids: [1], duration: '04:00' }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toThrow('db down');
     });
 
     const imported = {
@@ -190,12 +185,12 @@ describe('Prisma relations controllers', () => {
       );
     });
 
-    it('wraps an unexpected import failure as a 500', async () => {
+    it('lets an unexpected import failure reach the global filter', async () => {
       service.importSongs.mockRejectedValue(new Error('db down'));
 
       await expect(
         bulkSongs.importSongs({ songs: [imported] }),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toThrow('db down');
     });
   });
 });

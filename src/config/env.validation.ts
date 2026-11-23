@@ -1,14 +1,9 @@
 import * as Joi from 'joi';
 
 /**
- * Validated at boot by `ConfigModule.forRoot({ validationSchema: ... })`
- * in `app.module.ts` — a missing or malformed required variable makes the
- * app refuse to start with a clear error, instead of limping along with
- * `undefined` and failing confusingly on the first request that needs it.
- *
- * `PORT`/`DB_PORT` get sensible, non-sensitive defaults (matching this
- * app's previous hardcoded behavior); the rest have no universal default
- * that would be safe to guess, so they're required.
+ * Environment schema checked at boot, so a missing or malformed variable
+ * stops startup instead of failing on the first request that needs it.
+ * Only values with a safe, non-secret default are optional.
  */
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
@@ -22,8 +17,7 @@ export const envValidationSchema = Joi.object({
   DB_PASSWORD: Joi.string().required(),
   DB_NAME: Joi.string().required(),
   MONGO_URI: Joi.string().uri().required(),
-  // A dedicated toggle rather than tying this to NODE_ENV — explicit and
-  // independently switchable, not implicitly flipped by environment.
+  // Its own toggle rather than derived from NODE_ENV, so it's explicit.
   ENABLE_SWAGGER: Joi.boolean().default(true),
   // Base URL for the Deezer public API behind `Artist.profile`. Defaulted
   // (it's public, needs no key); overridable for tests or a proxy.
@@ -31,4 +25,8 @@ export const envValidationSchema = Joi.object({
   // Where uploaded files (avatars) are written, relative to the working
   // directory unless absolute. Overridable so tests can use a temp dir.
   UPLOADS_DIR: Joi.string().default('uploads'),
+  // Comma-separated browser origins allowed to call the API. Unset means
+  // no CORS headers at all: only same-origin pages (and non-browser
+  // clients) can use it.
+  CORS_ORIGIN: Joi.string().optional(),
 });

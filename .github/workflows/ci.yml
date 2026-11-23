@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Matches .env.example and docker-compose.yml. prisma.config.ts reads the
+# DB_* variables during `npm ci` (postinstall runs `prisma generate`), so
+# they're set for every job.
+env:
+  NODE_ENV: test
+  JWT_SECRET: ci-only-secret-that-is-at-least-32-characters-long
+  DB_HOST: localhost
+  DB_PORT: 5432
+  DB_USERNAME: nestjs
+  DB_PASSWORD: nestjs
+  DB_NAME: n_fundamentals
+  MONGO_URI: mongodb://localhost:27017/n_fundamentals
+
+jobs:
+  checks:
+    name: Lint, types, build, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:check
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nestjs
+          POSTGRES_PASSWORD: nestjs
+          POSTGRES_DB: n_fundamentals
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nestjs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run migration:run
+      - run: npm run prisma:migrate
+      - run: npm run test:e2e

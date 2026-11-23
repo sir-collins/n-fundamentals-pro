@@ -1,12 +1,9 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 
 /**
- * `signup`'s real, guaranteed return shape — `id`/`email` only, same as
- * REST's `Pick<User, 'id' | 'email'>`. Deliberately not the full `User`
- * type: `User.role` is non-nullable there (every other legitimate use
- * always has it), so returning a partial `User` from `signup` would
- * violate that contract the moment a client actually asks for `role` —
- * found this exactly that way, not guessed in advance.
+ * GraphQL result of `signup`: `id` and `email` only. Not the `User` type,
+ * because `User.role` is non-nullable and `signup` doesn't return it; a
+ * client selecting `role` would get a null-field error.
  */
 @ObjectType()
 export class SignupResult {

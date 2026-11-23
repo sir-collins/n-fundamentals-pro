@@ -3,15 +3,9 @@ import { AuthGuard } from '@nestjs/passport';
 import { GqlExecutionContext } from '@nestjs/graphql';
 
 /**
- * `AuthGuard('jwt')`'s GraphQL counterpart. Passport's guard base class
- * calls `getRequest(context)` to find the request to extract a token
- * from — its default assumes a REST `ExecutionContext`
- * (`context.switchToHttp().getRequest()`), which doesn't hold the real
- * request in a GraphQL execution context. Overriding just this one
- * method is enough: the actual JWT verification (`JwtStrategy`) is
- * unchanged and fully reused, since a bearer token in the
- * `Authorization` header looks identical to Express regardless of
- * transport.
+ * `AuthGuard('jwt')` for GraphQL resolvers. Only `getRequest` is
+ * overridden, because the default reads the HTTP context, which holds no
+ * request under GraphQL; `JwtStrategy` is reused unchanged.
  */
 @Injectable()
 export class GqlAuthGuard extends AuthGuard('jwt') {

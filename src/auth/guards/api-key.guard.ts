@@ -9,15 +9,13 @@ import { ApiKeysService } from '../api-keys.service';
 import type { AuthUser } from '../auth-user';
 
 /**
- * Authenticates a request via the `x-api-key` header instead of a JWT
- * bearer token — the machine-to-machine counterpart to `JwtStrategy`.
- * Deliberately a plain `CanActivate`, not a Passport strategy: a header
- * lookup + hash + DB match doesn't need Passport's abstraction the way
- * login (local) or bearer-token (jwt) auth does.
+ * Authenticates a request via the `x-api-key` header. A plain guard rather
+ * than a Passport strategy, since a header lookup needs nothing Passport
+ * offers.
  *
- * On success, sets `request.user` to the same `{ id, email, role }` shape
- * `JwtStrategy.validate` produces — so anything downstream (`RolesGuard`
- * included) can't tell which mechanism authenticated the request.
+ * Sets `request.user` to the same shape `JwtStrategy` produces, picked
+ * explicitly so the password hash and 2FA secret never ride along, and so
+ * downstream code (`RolesGuard` included) can't tell the mechanisms apart.
  */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {

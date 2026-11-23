@@ -11,12 +11,8 @@ import { PUBLIC_CACHE_HINT } from '../../common/cache-control';
 import { Artist } from '../../artists/entities/artist.entity';
 
 /**
- * A song as stored in Postgres. Unlike `CreateSongDto` (client input), this
- * includes the database-assigned `id` and real `Artist` rows.
- *
- * `@ObjectType()`/`@Field()` sit alongside the existing `@ApiProperty()`s
- * the same way — one class, two API layers (REST via Swagger, GraphQL via
- * this), no separate GraphQL-only type to keep in sync.
+ * A song row in Postgres. The same class serves as the TypeORM entity, the
+ * Swagger model and the GraphQL type, so the three can't drift apart.
  */
 @ObjectType()
 @Directive(PUBLIC_CACHE_HINT)
@@ -32,9 +28,8 @@ export class Song {
   @Column()
   title!: string;
 
-  // Owning side of the many-to-many relation — @JoinTable() creates and
-  // manages the join table pairing song_id/artist_id. Not loaded by
-  // default; repository calls must ask for it via relations: ['artists'].
+  // Owning side of the relation. Not loaded by default: queries must ask
+  // for `relations: { artists: true }`.
   @ApiProperty({ type: () => Artist, isArray: true })
   @Field(() => [Artist])
   @ManyToMany(() => Artist, (artist) => artist.songs)

@@ -8,8 +8,6 @@ import { extname } from 'path';
 import {
   Controller,
   Get,
-  HttpException,
-  InternalServerErrorException,
   NotFoundException,
   Param,
   ParseFilePipe,
@@ -105,30 +103,22 @@ export class UsersController {
     )
     file: Express.Multer.File,
   ): Promise<{ avatarUrl: string }> {
-    try {
-      // Non-null: ImageSignatureValidator already accepted these bytes.
-      const { ext } = detectImageType(file.buffer)!;
-      const filename = await this.avatarStorage.save(userId, file.buffer, ext);
-      const result = await this.usersService.setAvatarPath(userId, filename);
+    // Non-null: ImageSignatureValidator already accepted these bytes.
+    const { ext } = detectImageType(file.buffer)!;
+    const filename = await this.avatarStorage.save(userId, file.buffer, ext);
+    const result = await this.usersService.setAvatarPath(userId, filename);
 
-      if (!result) {
-        // The token outlived its user: don't leave the new file behind.
-        await this.avatarStorage.remove(filename);
-        throw new UnauthorizedException('User no longer exists');
-      }
-
-      if (result.previous) {
-        await this.avatarStorage.remove(result.previous);
-      }
-
-      return { avatarUrl: `/users/${userId}/avatar` };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to store avatar');
+    if (!result) {
+      // The token outlived its user: don't leave the new file behind.
+      await this.avatarStorage.remove(filename);
+      throw new UnauthorizedException('User no longer exists');
     }
+
+    if (result.previous) {
+      await this.avatarStorage.remove(result.previous);
+    }
+
+    return { avatarUrl: `/users/${userId}/avatar` };
   }
 
   /**
@@ -142,31 +132,23 @@ export class UsersController {
   async getAvatar(
     @Param('id', ParseIntPipe) id: number,
   ): Promise<StreamableFile> {
-    try {
-      const user = await this.usersService.findById(id);
+    const user = await this.usersService.findById(id);
 
-      if (!user?.avatarPath) {
-        throw new NotFoundException(`User with id ${id} has no avatar`);
-      }
-
-      const path = this.avatarStorage.pathFor(user.avatarPath);
-
-      try {
-        await access(path);
-      } catch {
-        // The row points at a file that's gone (e.g. a wiped disk).
-        throw new NotFoundException(`User with id ${id} has no avatar`);
-      }
-
-      return new StreamableFile(createReadStream(path), {
-        type: CONTENT_TYPES[extname(path)] ?? 'application/octet-stream',
-      });
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to read avatar');
+    if (!user?.avatarPath) {
+      throw new NotFoundException(`User with id ${id} has no avatar`);
     }
+
+    const path = this.avatarStorage.pathFor(user.avatarPath);
+
+    try {
+      await access(path);
+    } catch {
+      // The row points at a file that's gone (e.g. a wiped disk).
+      throw new NotFoundException(`User with id ${id} has no avatar`);
+    }
+
+    return new StreamableFile(createReadStream(path), {
+      type: CONTENT_TYPES[extname(path)] ?? 'application/octet-stream',
+    });
   }
 }

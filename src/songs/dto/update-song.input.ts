@@ -1,11 +1,11 @@
 import { InputType, PartialType } from '@nestjs/graphql';
-import { CreateSongDto } from './create-song-dto';
+import { CreateSongDto } from './create-song.dto';
 
 /**
- * The `updateSong` mutation's input — every `CreateSongDto` field made
- * optional. `@nestjs/graphql`'s `PartialType` (not TypeScript's own
- * `Partial<T>`) generates a real GraphQL input type with each field
- * genuinely optional in the schema, not just a compile-time type alias.
+ * `CreateSongDto` with every field optional; used by `PUT /songs/:id` and
+ * the `updateSong` mutation. This `PartialType` keeps the validation rules
+ * but drops `@ApiProperty`, so the REST route documents its body with
+ * `@ApiBody` instead.
  */
 @InputType()
 export class UpdateSongInput extends PartialType(CreateSongDto) {}

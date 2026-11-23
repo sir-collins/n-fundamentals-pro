@@ -2,9 +2,8 @@
 export const USER_CREATED = 'user.created';
 
 /**
- * Emitted by `AuthService.signup` once a new account exists. Deliberately
- * minimal (no password hash, no full entity): listeners get the facts
- * they need, and anything else they can look up themselves.
+ * Emitted by `AuthService.signup`. Carries only ids and email, never the
+ * entity, so the password hash can't reach a listener.
  */
 export class UserCreatedEvent {
   constructor(

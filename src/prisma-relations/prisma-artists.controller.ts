@@ -9,7 +9,6 @@ import {
   ParseIntPipe,
   Post,
   UseGuards,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -30,8 +29,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
 
-// Inline Swagger shapes: Prisma's generated types have no runtime class to
-// hang @ApiProperty on (see PrismaSongsController).
+// Inline Swagger schemas: Prisma's generated types have no runtime class to
+// carry @ApiProperty.
 const albumSchema = {
   properties: {
     id: { type: 'number' },
@@ -43,11 +42,7 @@ const albumSchema = {
 
 const countSchema = { properties: { count: { type: 'number' } } };
 
-/**
- * Artists and their albums — the one-to-many side of Project 9's
- * relations, at `/prisma/artists`. Same guard and error shape as
- * `PrismaSongsController`.
- */
+/** Artists and their albums (one-to-many) at `/prisma/artists`. */
 @ApiTags('prisma-relations')
 @Controller('prisma/artists')
 export class PrismaArtistsController {
@@ -71,16 +66,12 @@ export class PrismaArtistsController {
   @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
-  // A static path, declared before the `:id` routes: Nest matches routes
-  // in declaration order, so a later `DELETE :id` couldn't swallow it.
+  // Declared before the `:id` routes: Nest matches in declaration order, so
+  // a later `DELETE :id` can't swallow it.
   @Delete('orphans')
   @HttpCode(HttpStatus.OK)
   async deleteOrphans(): Promise<{ count: number }> {
-    try {
-      return await this.relationsService.deleteOrphanArtists();
-    } catch {
-      throw new InternalServerErrorException('Failed to delete artists');
-    }
+    return this.relationsService.deleteOrphanArtists();
   }
 
   /**
@@ -104,21 +95,13 @@ export class PrismaArtistsController {
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<ArtistDetail> {
-    try {
-      const artist = await this.relationsService.findArtist(id);
+    const artist = await this.relationsService.findArtist(id);
 
-      if (!artist) {
-        throw new NotFoundException(`Artist with id ${id} was not found`);
-      }
-
-      return artist;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to fetch artist');
+    if (!artist) {
+      throw new NotFoundException(`Artist with id ${id} was not found`);
     }
+
+    return artist;
   }
 
   /**
@@ -146,21 +129,13 @@ export class PrismaArtistsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() createAlbumDto: CreateAlbumDto,
   ): Promise<Album> {
-    try {
-      const album = await this.relationsService.addAlbum(id, createAlbumDto);
+    const album = await this.relationsService.addAlbum(id, createAlbumDto);
 
-      if (!album) {
-        throw new NotFoundException(`Artist with id ${id} was not found`);
-      }
-
-      return album;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to create album');
+    if (!album) {
+      throw new NotFoundException(`Artist with id ${id} was not found`);
     }
+
+    return album;
   }
 
   /**
@@ -192,20 +167,12 @@ export class PrismaArtistsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() { albums }: CreateAlbumsDto,
   ): Promise<{ created: Album[] }> {
-    try {
-      const created = await this.relationsService.addAlbums(id, albums);
+    const created = await this.relationsService.addAlbums(id, albums);
 
-      if (!created) {
-        throw new NotFoundException(`Artist with id ${id} was not found`);
-      }
-
-      return { created };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to create albums');
+    if (!created) {
+      throw new NotFoundException(`Artist with id ${id} was not found`);
     }
+
+    return { created };
   }
 }

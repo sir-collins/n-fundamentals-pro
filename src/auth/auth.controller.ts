@@ -1,19 +1,14 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Post,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -61,26 +56,13 @@ export class AuthController {
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   async signup(@Body() dto: SignupDto): Promise<Pick<User, 'id' | 'email'>> {
-    try {
-      return await this.authService.signup(dto);
-    } catch (error) {
-      if (error instanceof ConflictException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to sign up');
-    }
+    return this.authService.signup(dto);
   }
 
   /**
-   * Log in with email + password. Returns a signed JWT directly, unless
-   * the account has 2FA enabled — then it returns a short-lived
-   * `tempToken` instead, and the client must complete
-   * `POST /auth/2fa/authenticate` with a TOTP code to get a real token.
-   *
-   * `AuthGuard('local')` runs `LocalStrategy` before this body ever
-   * executes — a bad credential pair 401s there, so the try/catch below
-   * only covers unexpected failures inside `login()` itself.
+   * Log in with email + password. Returns a JWT, or a short-lived
+   * `tempToken` if the account has 2FA enabled (complete it via
+   * `POST /auth/2fa/authenticate`).
    */
   @ApiBody({ type: LoginDto })
   @ApiOperation({
@@ -102,26 +84,17 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(
-    // Stays on @Req(): this req.user comes from LocalStrategy and carries
-    // isTwoFactorEnabled too, so it isn't an AuthUser.
+    // Uses @Req() rather than @CurrentUser(): LocalStrategy's user also
+    // carries isTwoFactorEnabled, so it isn't an AuthUser.
     @Req()
     req: Request & {
       user: Pick<User, 'id' | 'email' | 'role' | 'isTwoFactorEnabled'>;
     },
   ): { access_token: string } | { twoFactorRequired: true; tempToken: string } {
-    try {
-      return this.authService.login(req.user);
-    } catch {
-      throw new InternalServerErrorException('Failed to log in');
-    }
+    return this.authService.login(req.user);
   }
 
-  /**
-   * The authenticated user's own identity. First route protected by a
-   * JWT: `AuthGuard('jwt')` runs `JwtStrategy` before this body ever
-   * executes — a missing, malformed, or expired token 401s there, so
-   * nothing in this handler can actually throw.
-   */
+  /** The authenticated user's own identity, read from the JWT. */
   @ApiBearerAuth()
   @ApiOperation({ summary: "The authenticated user's own identity." })
   @ApiResponse({
@@ -136,11 +109,7 @@ export class AuthController {
     return user;
   }
 
-  /**
-   * Generate a new TOTP secret and return it as a scannable QR code data
-   * URL. Requires a valid JWT — 2FA setup only makes sense for a caller
-   * we already know the identity of.
-   */
+  /** Generate a new TOTP secret, returned as a QR code data URL. */
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Generate a new TOTP secret, returned as a scannable QR code.',
@@ -157,21 +126,12 @@ export class AuthController {
   async generateTwoFactor(
     @CurrentUser() user: AuthUser,
   ): Promise<{ qrCodeDataUrl: string }> {
-    try {
-      return await this.authService.generateTwoFactorSecret(
-        user.id,
-        user.email,
-      );
-    } catch {
-      throw new InternalServerErrorException(
-        'Failed to generate two-factor secret',
-      );
-    }
+    return await this.authService.generateTwoFactorSecret(user.id, user.email);
   }
 
   /**
    * Confirm 2FA setup with a code from the user's authenticator app.
-   * @throws BadRequestException if the code doesn't match.
+   * @throws BadRequestException if the code doesn't match or was already used.
    */
   @ApiBearerAuth()
   @ApiOperation({
@@ -190,26 +150,16 @@ export class AuthController {
     @CurrentUser('id') userId: number,
     @Body() dto: TwoFactorCodeDto,
   ): Promise<{ message: string }> {
-    try {
-      await this.authService.turnOnTwoFactor(userId, dto.code);
-      return { message: 'Two-factor authentication enabled' };
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to turn on 2FA');
-    }
+    await this.authService.turnOnTwoFactor(userId, dto.code);
+    return { message: 'Two-factor authentication enabled' };
   }
 
   /**
-   * Second half of a 2FA login: exchange the `tempToken` from `login`
-   * plus a TOTP code for a real `access_token`. Deliberately no
-   * `@UseGuards` here — the caller doesn't have a real token yet, so
-   * `tempToken` is what's checked (manually, inside the service), not an
-   * `Authorization` header.
+   * Second half of a 2FA login: exchange the `tempToken` from `login` plus
+   * a TOTP code for a real `access_token`. Unguarded on purpose: the caller
+   * has no real token yet, and the service verifies `tempToken` itself.
    * @throws UnauthorizedException if `tempToken` is invalid/expired.
-   * @throws BadRequestException if `code` doesn't match.
+   * @throws BadRequestException if `code` doesn't match or was already used.
    */
   @ApiOperation({
     summary:
@@ -232,32 +182,16 @@ export class AuthController {
   async authenticateTwoFactor(
     @Body() dto: TwoFactorAuthenticateDto,
   ): Promise<{ access_token: string }> {
-    try {
-      return await this.authService.authenticateTwoFactor(
-        dto.tempToken,
-        dto.code,
-      );
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException(
-        'Failed to authenticate with two-factor code',
-      );
-    }
+    return await this.authService.authenticateTwoFactor(
+      dto.tempToken,
+      dto.code,
+    );
   }
 
   /**
-   * Mint a new API key for the caller. Guarded by `AuthGuard('jwt')`, not
-   * `ApiKeyGuard` — deliberately: minting a key must require a real login
-   * session, or a single leaked key could mint unlimited replacements for
-   * itself. The raw key is only ever returned here — only its hash is
-   * stored, so losing this response means generating a new key, not
-   * recovering the old one.
+   * Mint a new API key for the caller. Requires a JWT, not an API key, so a
+   * leaked key can't mint replacements for itself. The raw key is returned
+   * only here; just its hash is stored.
    */
   @ApiBearerAuth()
   @ApiOperation({
@@ -278,11 +212,7 @@ export class AuthController {
     @CurrentUser('id') userId: number,
     @Body() dto: CreateApiKeyDto,
   ): Promise<{ id: number; apiKey: string }> {
-    try {
-      return await this.apiKeysService.generate(userId, dto.label);
-    } catch {
-      throw new InternalServerErrorException('Failed to create API key');
-    }
+    return this.apiKeysService.generate(userId, dto.label);
   }
 
   /** List the caller's own API keys — metadata only, never the raw key or hash. */
@@ -298,17 +228,12 @@ export class AuthController {
   async listApiKeys(
     @CurrentUser('id') userId: number,
   ): Promise<Pick<ApiKey, 'id' | 'label' | 'createdAt' | 'lastUsedAt'>[]> {
-    try {
-      return await this.apiKeysService.listForUser(userId);
-    } catch {
-      throw new InternalServerErrorException('Failed to list API keys');
-    }
+    return this.apiKeysService.listForUser(userId);
   }
 
   /**
-   * Identify the caller by API key alone — `ApiKeyGuard` only, no JWT
-   * involved. Deliberately the same response shape as `GET /auth/profile`:
-   * same identity, different auth mechanism proving it.
+   * Identify the caller by API key alone. Same response shape as
+   * `GET /auth/profile`.
    */
   @ApiSecurity('api-key')
   @ApiOperation({
@@ -347,15 +272,7 @@ export class AuthController {
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ message: string }> {
-    try {
-      await this.apiKeysService.revoke(userId, id);
-      return { message: 'API key revoked' };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to revoke API key');
-    }
+    await this.apiKeysService.revoke(userId, id);
+    return { message: 'API key revoked' };
   }
 }

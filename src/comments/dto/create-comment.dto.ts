@@ -15,8 +15,7 @@ export class CreateCommentDto {
   @MaxLength(2000)
   readonly body!: string;
 
-  // Omitted for a top-level comment; set to reply to an existing comment
-  // on the same song.
+  // Omitted for a top-level comment.
   @ApiPropertyOptional({
     description: 'The _id of the comment being replied to.',
   })

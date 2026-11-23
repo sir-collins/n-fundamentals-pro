@@ -1,203 +1,217 @@
-# n-fundamentals-pro
+# Music Catalog API
 
-A hands-on NestJS learning project: one evolving API, built step by step
-across a project-based roadmap (freeCodeCamp's "Learn NestJS" course),
-rather than a bunch of disconnected tutorial snippets.
+[![CI](https://github.com/sir-collins/n-fundamentals-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/sir-collins/n-fundamentals-pro/actions/workflows/ci.yml)
+![Node 24](https://img.shields.io/badge/node-24-339933)
+![NestJS 11](https://img.shields.io/badge/NestJS-11-E0234E)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-At its centre is a music catalog: **songs** and **artists** (many-to-many),
-with auth, comments, real-time updates and a GraphQL API layered on top.
-The same catalog is also built twice, once with **TypeORM** and once with
-**Prisma**, to compare the two. Every step is documented in
-[`docs/`](./docs): the roadmap, a progress checklist, and a build journal
-explaining *why* each piece was built the way it was. Start at
-[`docs/README.md`](./docs/README.md).
+A NestJS backend for a music catalog: songs, artists, users and comments.
+It serves REST, GraphQL and WebSocket clients from the same services.
+It stores data in PostgreSQL and MongoDB, and it is covered by unit and
+end-to-end tests that run in CI against real databases.
 
-## What's in it
-
-| Area | What it does | Where |
-|---|---|---|
-| **REST songs** | Validated, paginated CRUD; artists created by name on first use | `src/songs/`, `src/artists/` |
-| **Auth** | Signup/login with JWT, `admin`/`user` roles, TOTP two-factor auth (with replay protection), API keys | `src/auth/`, `src/users/` |
-| **Comments** | Threaded comments on songs, stored in **MongoDB** (polyglot persistence) | `src/comments/` |
-| **Real time** | Live comment notifications over **WebSockets** (Socket.IO) | `src/comments/`, [`public/realtime-comments.html`](./public/realtime-comments.html) |
-| **GraphQL** | A code-first API at `/graphql` over the same services: queries, guarded mutations, a `commentAdded` subscription, **DataLoader** batching, Apollo **response caching**, and artist profiles fetched live from **Deezer's** API | `*.resolver.ts`, [`schema.gql`](./schema.gql), [`public/graphql-comment-subscriptions.html`](./public/graphql-comment-subscriptions.html) |
-| **Avatars** | Upload (`PUT /users/me/avatar`, PNG/JPEG/WebP ≤ 2 MB, checked by magic numbers) and public download (`GET /users/:id/avatar`) | `src/users/`, `src/common/validators/` |
-| **Events & jobs** | `@CurrentUser()` param decorator; a `user.created` event drives the (logged) welcome email; a nightly CRON job deletes orphaned artists | `src/auth/decorators/`, `src/mail/`, `src/artists/orphan-artists-cleanup.job.ts` |
-| **Prisma rebuild** | `/prisma/songs` mirrors `/songs` on Prisma, plus albums (one-to-many), lyrics (one-to-one), bulk operations and an all-or-nothing import (interactive transaction) | `src/prisma*/`, [`prisma/schema.prisma`](./prisma/schema.prisma) |
-
-The Prisma vs TypeORM comparison, including the SQL each ORM actually
-sends, is written up in
+The songs data layer is implemented **twice, in TypeORM and in Prisma**, and
+a parity test suite holds both to identical behaviour. The comparison,
+including the SQL each ORM actually sends, is written up in
 [`docs/04-prisma-vs-typeorm.md`](./docs/04-prisma-vs-typeorm.md).
 
-## Stack
+## Features
 
-- **NestJS 11**: controllers, services and modules; pipes, guards,
-  exception filters, middleware
-- **PostgreSQL 16**, through two ORMs side by side:
-  - **TypeORM** (schema `public`), with committed migrations
-    (`src/database/migrations/`)
-  - **Prisma 7** (schema `prisma`, pinned to 7.10.0), with its own
-    migrations (`prisma/migrations/`) and the `pg` driver adapter
-- **MongoDB** via **Mongoose**, for comments
-- **Passport** (`local` + `jwt`), **bcrypt**, **otplib** + **qrcode**
-- **Swagger/OpenAPI** (`@nestjs/swagger`)
-- **Socket.IO** WebSockets, and **GraphQL** with Apollo (`graphql-ws` for
-  subscriptions)
-- **`@nestjs/event-emitter`** and **`@nestjs/schedule`**; **multer** for
-  uploads
-- **Jest** + **supertest** for unit and E2E tests
-- Postgres and MongoDB run locally through `docker-compose.yml`
+- **Songs and artists:** REST and GraphQL with validated, paginated CRUD.
+  Artists are many-to-many with songs and are created by name on first use.
+- **Authentication:**
+  - signup and login issuing JWTs, with `admin` and `user` roles
+  - TOTP two-factor login with replay protection
+  - API keys sent as `x-api-key`.
+- **Comments in MongoDB:** stored next to the relational data. New comments
+  are pushed live over **Socket.IO** and through a **GraphQL subscription**.
+- **GraphQL:** code-first. It uses **DataLoader** batching to avoid N+1
+  queries, Apollo response caching, and live artist profiles from Deezer's
+  public API.
+- **Avatar uploads:**
+  - PNG, JPEG or WebP up to 2 MB
+  - the type is validated from the file's bytes (magic numbers), not the
+    client's claimed type
+  - stored under server-generated names.
+- **Events and jobs:**
+  - a `user.created` event sends the welcome email, which is currently
+    logged rather than sent
+  - a nightly CRON job removes artists that no longer have songs.
+- **Prisma counterpart:**
+  - `/prisma/songs` mirrors `/songs`
+  - one-to-many albums and one-to-one lyrics
+  - bulk updates, and an all-or-nothing import in an interactive
+    transaction.
+- **Operations:**
+  - env vars are validated at boot, and both ORMs use committed migrations
+  - `/health` checks every datastore
+  - helmet security headers, configurable CORS and graceful shutdown
+  - structured request logging
+  - one global exception filter gives REST and GraphQL a consistent error
+    shape, and unexpected errors are logged without leaking internals.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    REST[REST + Swagger]
+    GQL[GraphQL + subscriptions]
+    WS[Socket.IO]
+  end
+
+  subgraph NestJS
+    Auth[auth<br/>JWT · roles · 2FA · API keys]
+    Songs[songs + artists]
+    PSongs[prisma-songs<br/>prisma-relations]
+    Comments[comments]
+    Users[users + avatars]
+    Jobs[events · CRON · mail]
+  end
+
+  REST --> Auth & Songs & PSongs & Comments & Users
+  GQL --> Auth & Songs & Comments
+  WS --> Comments
+
+  Songs -- TypeORM --> PG[(PostgreSQL<br/>schema public)]
+  Users -- TypeORM --> PG
+  PSongs -- Prisma --> PGP[(PostgreSQL<br/>schema prisma)]
+  Comments -- Mongoose --> Mongo[(MongoDB)]
+  Songs -. Deezer API .-> Deezer((Deezer))
+  Jobs --> Songs
+```
+
+Each ORM owns its own Postgres schema (`public` and `prisma`), so neither
+treats the other's tables as drift.
+
+## API overview
+
+Full, interactive documentation is at `/api` (Swagger) and `/graphql`.
+
+| Area | Routes |
+|---|---|
+| Auth | `POST /auth/signup`, `POST /auth/login`, `GET /auth/profile`, `POST /auth/2fa/{generate,turn-on,authenticate}` |
+| API keys | `POST /auth/api-keys`, `GET /auth/api-keys`, `GET /auth/api-keys/whoami`, `DELETE /auth/api-keys/:id` |
+| Songs (TypeORM) | `GET /songs`, `GET /songs/:id`, `POST /songs`, `PUT /songs/:id`, `DELETE /songs/:id` (writes are admin only) |
+| Songs (Prisma) | the same routes under `/prisma/songs`, plus `GET\|PUT /prisma/songs/:id/lyrics`, `POST\|PATCH /prisma/songs/bulk` |
+| Artists (Prisma) | `GET /prisma/artists/:id`, `POST /prisma/artists/:id/albums`, `POST /prisma/artists/:id/albums/bulk`, `DELETE /prisma/artists/orphans` |
+| Comments | `POST /songs/:songId/comments`, `GET /songs/:songId/comments`, `DELETE /comments/:id` (author or admin) |
+| Users | `PUT /users/me/avatar`, `GET /users/:id/avatar` |
+| Health | `GET /health` |
+| GraphQL | `/graphql`: song queries and admin mutations, artists with Deezer profiles, signup/login/profile, `commentAdded` subscription |
+
+## Tech stack
+
+- **Framework and language:** NestJS 11, TypeScript, Node.js 24.
+- **PostgreSQL 16:**
+  - **TypeORM** with committed migrations
+  - **Prisma 7** through the `pg` driver adapter.
+- **MongoDB** with Mongoose.
+- **Auth:** Passport (`local`, `jwt`), bcrypt, otplib.
+- **API layers:**
+  - GraphQL: Apollo, `graphql-ws`, DataLoader
+  - WebSockets: Socket.IO
+  - REST docs: Swagger / OpenAPI.
+- **Background work:** `@nestjs/event-emitter`, `@nestjs/schedule`.
+- **Uploads:** multer.
+- **Testing:** Jest and supertest.
+- **Local infrastructure and CI:** Docker Compose, GitHub Actions.
 
 ## Getting started
 
+Requires Node 24 and Docker.
+
 ```bash
-# 1. Start Postgres + MongoDB
-docker compose up -d
-
-# 2. Configure: the defaults match docker-compose.yml
-cp .env.example .env
-
-# 3. Install. This also runs `prisma generate` (postinstall),
-#    which writes the Prisma client to src/generated/prisma (gitignored)
-npm install
-
-# 4. Create the tables: TypeORM's, then Prisma's
-npm run migration:run
-npx prisma migrate deploy
-
-# 5. Optional: sample songs and artists
-npm run seed
-
-# 6. Run in watch mode
+docker compose up -d          # Postgres 16 + MongoDB 7
+cp .env.example .env          # defaults match docker-compose.yml
+npm install                   # also generates the Prisma client
+npm run migration:run         # TypeORM schema
+npm run prisma:migrate        # Prisma schema
+npm run seed                  # optional: sample songs and artists
 npm run start:dev
 ```
 
-The app listens on `http://localhost:3000` (or `PORT`).
+Then open http://localhost:3000/api (Swagger) or http://localhost:3000/graphql.
 
-### Environment variables
+**Trying the API:**
+- **Swagger:** the **Authorize** button accepts a JWT from `POST /auth/login`
+  (without the `Bearer ` prefix) or an API key from `POST /auth/api-keys`.
+- **Demo pages:** `/realtime-comments.html` and
+  `/graphql-comment-subscriptions.html` show live comments.
+- **REST Client:** [`rest-client.http`](./rest-client.http) has ready-made
+  requests for the VS Code REST Client extension.
 
-Every value is validated at boot (`src/config/env.validation.ts`). A
-missing or malformed one stops the app with a clear error instead of
-failing later.
+**Admin access:** new accounts are `user`s. Song writes need an `admin`, so
+for local testing promote an account in Postgres:
+`UPDATE "user" SET role = 'admin' WHERE email = '…';`
+
+### Configuration
+
+Every variable is validated at boot (`src/config/env.validation.ts`). A
+missing or malformed value stops the app with a clear error.
 
 | Variable | Purpose |
 |---|---|
-| `PORT` | HTTP port (default `3000`) |
-| `JWT_SECRET` | Signs access tokens |
-| `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME` | Postgres, used by **both** TypeORM and Prisma. Prisma's CLI builds its URL from these in [`prisma.config.ts`](./prisma.config.ts), so there's no separate `DATABASE_URL` |
+| `JWT_SECRET` | Signs access tokens (at least 32 characters) |
+| `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME` | Postgres, shared by TypeORM and Prisma ([`prisma.config.ts`](./prisma.config.ts) builds Prisma's URL from them) |
 | `MONGO_URI` | MongoDB, for comments |
-| `NODE_ENV` | `development` / `production` / `test` (default `development`) |
-| `ENABLE_SWAGGER` | Serve the docs at `/api` (default `true`) |
-| `DEEZER_API_URL` | Base URL for artist profiles (default `https://api.deezer.com`) |
-| `UPLOADS_DIR` | Where uploaded avatars are written (default `uploads`, gitignored) |
-
-None of these are committed per environment (there's no `.env.production`).
-A real deployment sets its own values in its host's dashboard.
-
-### Other run modes
-
-- `npm run start:debug`: opens Node's inspector on port `9229`. Pairs with
-  the "Attach to Nest" config in `.vscode/launch.json`.
-- `npm run start:hmr`: webpack Hot Module Reloading.
-- `npm run start:swc`: SWC compilation (fast), plus a parallel
-  `tsc --noEmit` so type errors are still caught.
-- `npm run build && npm run start:prod`: the production build.
+| `PORT` | HTTP port (default `3000`) |
+| `NODE_ENV` | `development`, `production` or `test` |
+| `ENABLE_SWAGGER` | Serve Swagger at `/api` (default `true`) |
+| `CORS_ORIGIN` | Comma-separated allowed browser origins; unset means same-origin only |
+| `DEEZER_API_URL` | Artist profile source (default `https://api.deezer.com`) |
+| `UPLOADS_DIR` | Where avatars are written (default `uploads`) |
 
 ### Schema changes
 
 | | TypeORM | Prisma |
 |---|---|---|
-| Generate a migration | `npm run migration:generate -- src/database/migrations/<Name>` | `npx prisma migrate dev --name <name>` |
-| Apply | `npm run migration:run` | `npx prisma migrate deploy` |
-| Status | `npm run typeorm -- migration:show -d src/database/data-source.ts` | `npx prisma migrate status` |
-
-Review the generated SQL before applying it. Each ORM owns its own
-Postgres schema (`public` and `prisma`) and must never touch the other's.
-Prisma Migrate treats tables it didn't create as drift.
-
-## Exploring the API
-
-- **Swagger UI:** http://localhost:3000/api (raw spec at `/api-json`).
-  The **Authorize** button takes either a **bearer** JWT from
-  `POST /auth/login` (no `Bearer ` prefix) or an **api-key** from
-  `POST /auth/api-keys`, sent as `x-api-key`. A good first pass: sign up,
-  log in, authorize, try `GET /auth/profile`, mint an API key, then try
-  `GET /auth/api-keys/whoami` with it.
-- **GraphQL:** http://localhost:3000/graphql
-- **Real-time demos:** `/realtime-comments.html` (WebSockets) and
-  `/graphql-comment-subscriptions.html` (GraphQL subscriptions), served
-  from `public/`.
-- **REST Client:** [`rest-client.http`](./rest-client.http) holds
-  ready-to-run requests for VS Code's REST Client extension.
-
-Writes to songs (on both ORMs) need an `admin`. New accounts are `user`s,
-so promote one directly in Postgres for local testing:
-`UPDATE "user" SET role = 'admin' WHERE email = '…';`
+| Generate | `npm run migration:generate -- src/database/migrations/<Name>` | `npx prisma migrate dev --name <name>` |
+| Apply | `npm run migration:run` | `npm run prisma:migrate` |
 
 ## Testing
 
 ```bash
-npm test             # unit tests
-npm run test:e2e     # E2E tests (run in band)
-npm run test:cov     # coverage
+npm test              # unit tests (no databases needed)
+npm run test:e2e      # end-to-end, against the Postgres and MongoDB in .env
+npm run test:cov      # coverage
 ```
 
-The **E2E suites run against the real Postgres and MongoDB from `.env`**,
-so Docker must be up and both sets of migrations applied. Each suite
-stamps its data (`E2E … <timestamp>`) and deletes it afterwards. One
-exception: `DELETE /prisma/artists/orphans` and the orphaned-artist CRON
-job remove *every* orphaned artist (Prisma and TypeORM respectively), so
-run the suites against a dev database, never one with data you care about.
+The end-to-end suites boot the whole app against real databases. Each
+suite tags its data with a timestamp and deletes it afterwards. The
+exception is the orphaned-artist cleanup, which removes *every* orphaned
+artist, so run the suites against a development database only.
 
-Three packages (`@nestjs/mongoose`, `@nestjs/event-emitter`,
-`@nestjs/schedule`) ship as ES modules only, so both Jest configs list them
-in `transformIgnorePatterns`. Nest's own `FileTypeValidator` can't load its
-ESM dependency under this setup, which is why uploads use
-`ImageSignatureValidator` instead (see `docs/03-journal.md`).
+**Notable suites:**
+- **`test/songs-parity.e2e-spec.ts`:** runs the same scenarios against
+  `/songs` and `/prisma/songs`.
+- **`test/rest.e2e-spec.ts` and `test/graphql.e2e-spec.ts`:** cover both API
+  surfaces, including real TOTP codes, API keys and the 500 error path.
+- **`test/prisma-transactions.e2e-spec.ts`:** checks rollback against the
+  database itself.
+- **`test/uploads.e2e-spec.ts`:** includes a text file disguised as a PNG.
 
-Notable suites:
-- `test/rest.e2e-spec.ts` and `test/graphql.e2e-spec.ts`: the two API
-  surfaces, including real TOTP codes and API keys
-- `test/prisma*.e2e-spec.ts`: the Prisma routes, relations, bulk
-  operations and transactions (rollback checked against the database itself)
-- `test/songs-parity.e2e-spec.ts`: the same scenarios against `/songs`
-  *and* `/prisma/songs`, holding the two ORMs to identical behaviour
-- `test/uploads.e2e-spec.ts`: avatar uploads against a temp directory,
-  including a text file disguised as a PNG
+**CI** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) has two
+jobs:
+- **Checks:** lint, formatting, type-checking, the build and the unit tests.
+- **End-to-end:** both migration sets and the full suite, against Postgres
+  and MongoDB service containers.
 
 ## Deployment
 
-The app was deployed to **Railway** in Project 6 (its own Postgres and
-MongoDB, configured through Railway's dashboard; see
-[`railway.json`](./railway.json) and `docs/03-journal.md`). As of
-2026-11-06 the Railway service is **paused**, and its URL returns
-*"Application not found"*. Prisma's migrations were never applied there
-either: the Prisma work (Project 9) is local-only. Avatars are stored on
-local disk, which Railway wipes on every deploy, so they'd need object
-storage (S3, R2) or a Railway volume before going live there.
+[`railway.json`](./railway.json) runs both migration sets and then starts the
+production build. The Railway service is currently paused. Before going live
+again, avatars need durable storage, such as object storage or a volume,
+because local disk is wiped on each deploy.
 
-Merges to `master` no longer trigger a deploy. `railway.json` sets
-`build.watchPatterns` to `/.railway-deploy`, a file that doesn't exist,
-and Railway only deploys a push that changes a file matching the pattern.
-To deploy again, either create or edit `.railway-deploy` in a commit, or
-remove `watchPatterns`. Then apply both sets of migrations on Railway's
-Postgres.
+## How it was built
 
-## Project status
+This started as a project-based path through freeCodeCamp's
+["Learn NestJS"](https://www.freecodecamp.org/) course by Haider Malik and
+grew well beyond it over 10 projects. The roadmap, a progress log and a
+build journal recording each decision and what went wrong are in
+[`docs/learning/`](./docs/learning/README.md).
 
-| # | Project | Status |
-|---|---|---|
-| 1 | Your First REST API | ✅ |
-| 2 | Add a Real Database (TypeORM) | ✅ |
-| 3 | Authentication & Authorization | ✅ |
-| 4 | Production-Grade Setup | ✅ |
-| 5 | Add MongoDB Alongside SQL | ✅ |
-| 6 | Ship It (environments, Railway, testing) | ✅ |
-| 7 | Real-Time Layer (WebSockets) | ✅ |
-| 8 | GraphQL API | ✅ |
-| 9 | Rebuild the Data Layer with Prisma | ✅ |
-| 10 | Capstone: Advanced Feature Grab Bag (decorator, events, CRON, uploads) | ✅ |
+## License
 
-The live checklist, with notes on how each item was done, is
-[`docs/01-progress.md`](./docs/01-progress.md). The full roadmap is
-[`docs/00-roadmap.md`](./docs/00-roadmap.md).
+[MIT](./LICENSE)

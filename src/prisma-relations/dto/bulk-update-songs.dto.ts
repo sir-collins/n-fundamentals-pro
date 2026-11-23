@@ -10,9 +10,8 @@ import {
 } from 'class-validator';
 
 /**
- * Validated body of `PATCH /prisma/songs/bulk`: the same change applied to
- * every song in `ids`. Plain fields only — `updateMany` can't touch
- * relations, so there's no `artists` here. Rules match CreateSongDto.
+ * Body of `PATCH /prisma/songs/bulk`. No `artists`: `updateMany` can't
+ * change relations.
  */
 export class BulkUpdateSongsDto {
   @ApiProperty({ type: [Number], example: [1, 2, 3] })

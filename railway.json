@@ -4,6 +4,6 @@
     "watchPatterns": ["/.railway-deploy"]
   },
   "deploy": {
-    "startCommand": "npm run migration:run && npm run start:prod"
+    "startCommand": "npm run migration:run && npm run prisma:migrate && npm run start:prod"
   }
 }

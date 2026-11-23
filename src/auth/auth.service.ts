@@ -16,18 +16,16 @@ import {
   UserCreatedEvent,
 } from '../users/events/user-created.event';
 
-// Shown in an authenticator app next to the 6-digit code, so the user can
-// tell which account this entry belongs to.
+// Label shown next to the code in the user's authenticator app.
 const TWO_FACTOR_APP_NAME = 'NFundamentalsPro';
 
-// TOTP codes belong to 30-second time steps (otplib's default `step`).
+// Matches otplib's default TOTP `step`.
 const TOTP_STEP_SECONDS = 30;
 
-// Also accept the previous step's code (otplib defaults to `window: 0`),
-// so a code typed at :29 that arrives at :31 isn't rejected — the network
-// delay tolerance RFC 6238 recommends. Only safe because of the replay
-// protection below: each step's code still works exactly once. This sets
-// the shared `authenticator` singleton's options, app-wide.
+// Also accept the previous step's code, so a code typed at :29 that arrives
+// at :31 isn't rejected (RFC 6238 network-delay tolerance). Safe only
+// because of the replay protection in `verifyAndSpendCode`. Note this sets
+// options on the shared `authenticator` singleton, app-wide.
 authenticator.options = { window: 1 };
 
 @Injectable()
@@ -39,25 +37,14 @@ export class AuthService {
   ) {}
 
   /**
-   * Register a new user.
+   * Register a new user and emit `user.created`.
    *
-   * `UsersService.create` returns the full `User` entity, hash included —
-   * that's the right internal shape (e.g. login will need the hash to
-   * compare against). This is the boundary where it's stripped, so a
-   * password hash can never leak into an HTTP response from this path.
+   * Fields are picked explicitly rather than omitting `password` with a rest
+   * spread, so the hash can never leak and new `User` columns don't appear
+   * in the response by accident.
    *
-   * Fields are picked explicitly rather than destructuring `password` off
-   * and returning the rest — an omit-style rest spread would silently
-   * start including any new field added to `User` later (a phone number,
-   * say) unless someone remembered to exclude it too. `role` is a case in
-   * point: deliberately left out of this response (not secret, just not
-   * needed here) — visible via a login token or `/auth/profile` instead.
-   *
-   * Emits `user.created` once the account exists, so side effects such as
-   * the welcome email live in listeners rather than here. It's emitted in
-   * this method, not in `UsersService.create`, so the seed script (which
-   * calls `create` directly) doesn't send welcome emails. REST and GraphQL
-   * signup both come through here.
+   * The event is emitted here rather than in `UsersService.create` so the
+   * seed script, which calls `create` directly, doesn't send welcome emails.
    */
   async signup(dto: SignupDto): Promise<Pick<User, 'id' | 'email'>> {
     const user = await this.usersService.create(dto.email, dto.password);
@@ -70,14 +57,8 @@ export class AuthService {
 
   /**
    * Verify an email/password pair against the stored bcrypt hash.
-   * @returns the fields `login` needs if valid, `null` otherwise —
-   *   Passport's local-strategy convention: return `null` rather than
-   *   throw, so `LocalStrategy.validate` decides how to turn that into a
-   *   `401`. Deliberately `Pick`, not `Omit<User, 'password'>` — this
-   *   result flows into `login`, so it should carry exactly what that
-   *   needs (now including `isTwoFactorEnabled`, so `login` can decide
-   *   whether to demand a code), not automatically grow every time `User`
-   *   gains an unrelated column.
+   * @returns the fields `login` needs if valid, `null` otherwise (Passport's
+   *   local-strategy convention; `LocalStrategy` turns `null` into a 401).
    */
   async validateUser(
     email: string,
@@ -106,16 +87,11 @@ export class AuthService {
     };
   }
 
-  // Not async: JwtService.sign is synchronous (a separate signAsync exists
-  // for when that's actually needed) — this signature says what it does.
   /**
-   * Issue a session for an already-authenticated (password-verified)
-   * user. If they have 2FA enabled, this deliberately does NOT issue a
-   * full `access_token` yet — that would mean the password alone was
-   * still enough to get in. Instead it returns a short-lived `tempToken`
-   * that proves "this password check just succeeded, for this specific
-   * user" without being usable anywhere else; `authenticateTwoFactor`
-   * exchanges it (plus a TOTP code) for the real token.
+   * Issue a session for a password-verified user. With 2FA enabled it
+   * returns a short-lived `tempToken` instead of an `access_token`, so the
+   * password alone is never enough; `authenticateTwoFactor` exchanges it
+   * (plus a TOTP code) for the real token.
    */
   login(
     user: Pick<User, 'id' | 'email' | 'role' | 'isTwoFactorEnabled'>,
@@ -128,18 +104,16 @@ export class AuthService {
       return { twoFactorRequired: true, tempToken };
     }
 
-    // role travels inside the token itself — JwtStrategy trusts the
-    // payload directly (no DB lookup per request, see jwt.strategy.ts),
-    // so anything a guard needs to check has to be signed in here.
+    // JwtStrategy trusts the payload without a DB lookup, so anything a
+    // guard checks (like role) must be signed in here.
     const payload = { sub: user.id, email: user.email, role: user.role };
     return { access_token: this.jwtService.sign(payload) };
   }
 
   /**
-   * Generate a new TOTP secret for a user and return it as a scannable QR
-   * code. Calling this again before `turnOnTwoFactor` just overwrites the
-   * previous secret — not a bug, just means only the most recently
-   * generated QR code is actually valid to scan.
+   * Generate a new TOTP secret and return it as a QR code data URL.
+   * Calling this again before `turnOnTwoFactor` overwrites the previous
+   * secret, so only the latest QR code is valid.
    */
   async generateTwoFactorSecret(
     userId: number,
@@ -155,16 +129,11 @@ export class AuthService {
   }
 
   /**
-   * Confirm 2FA setup by checking a code from the user's authenticator
-   * app against their stored secret. Only flips `isTwoFactorEnabled` once
-   * this succeeds — proves the QR code was actually scanned correctly
-   * before 2FA starts being enforced anywhere.
-   * The code is spent here too (see `verifyAndSpendCode`), so the one
-   * typed during setup can't be replayed to log in moments later.
+   * Enable 2FA once a code from the authenticator app proves the QR code
+   * was scanned correctly. The code is spent, so it can't be replayed to
+   * log in moments later.
    * @throws BadRequestException if no secret was generated yet, or the
-   *   code doesn't match or was already used — the caller's identity isn't
-   *   in question here (they're already authenticated), just whether this
-   *   specific code is right.
+   *   code doesn't match or was already used.
    */
   async turnOnTwoFactor(userId: number, code: string): Promise<void> {
     const user = await this.usersService.findById(userId);
@@ -180,11 +149,9 @@ export class AuthService {
   }
 
   /**
-   * Second half of a 2FA login: exchange a `tempToken` (from `login`)
-   * plus a TOTP code for a real `access_token`. Deliberately not behind
-   * `AuthGuard('jwt')` — the caller doesn't have a real token yet, so the
-   * `tempToken` itself is verified manually here, standing in as proof
-   * the password check already succeeded for this specific user.
+   * Exchange a `tempToken` from `login` plus a TOTP code for a real
+   * `access_token`. The caller has no real token yet, so `tempToken` is
+   * verified here rather than by a guard.
    * @throws UnauthorizedException if `tempToken` is missing, expired, or
    *   isn't actually a pending-2FA token.
    * @throws BadRequestException if `code` doesn't match the user's secret,
@@ -224,15 +191,12 @@ export class AuthService {
   }
 
   /**
-   * Check a TOTP code and spend it, so it can never be accepted again.
-   *
-   * `checkDelta` (unlike `check`) says *which* step the code matched — `0`
-   * for the current one, `-1` for the previous (allowed by `window: 1`) —
-   * so the exact step the code belongs to can be recorded.
-   * @throws BadRequestException if the code doesn't match, or its step
-   *   (or a later one) was already spent — a distinct message, since it
-   *   tells a real user what to do and reveals nothing an attacker who
-   *   already holds the code doesn't know.
+   * Check a TOTP code and spend its time step, so it can never be accepted
+   * again. `checkDelta` (unlike `check`) reports which step matched, which
+   * is what gets recorded.
+   * @throws BadRequestException if the code doesn't match, or its step (or
+   *   a later one) was already spent. The reused-code message is distinct
+   *   because it helps a real user and tells an attacker nothing new.
    */
   private async verifyAndSpendCode(
     userId: number,
