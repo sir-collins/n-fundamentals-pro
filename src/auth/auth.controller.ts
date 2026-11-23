@@ -32,6 +32,7 @@ import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { ApiKey } from './entities/api-key.entity';
 import { User } from '../users/entities/user.entity';
 import type { AuthUser } from './auth-user';
+import { AuthThrottle } from './auth-throttle';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -81,6 +82,8 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
   @UseGuards(AuthGuard('local'))
+  @ApiResponse({ status: 429, description: 'Too many attempts; retry later.' })
+  @AuthThrottle()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(
@@ -144,6 +147,8 @@ export class AuthController {
   @ApiResponse({ status: 400, description: "Code doesn't match." })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @UseGuards(AuthGuard('jwt'))
+  @ApiResponse({ status: 429, description: 'Too many attempts; retry later.' })
+  @AuthThrottle()
   @Post('2fa/turn-on')
   @HttpCode(HttpStatus.OK)
   async turnOnTwoFactor(
@@ -177,6 +182,8 @@ export class AuthController {
     description: 'tempToken invalid/expired.',
   })
   @ApiResponse({ status: 400, description: "code doesn't match." })
+  @ApiResponse({ status: 429, description: 'Too many attempts; retry later.' })
+  @AuthThrottle()
   @Post('2fa/authenticate')
   @HttpCode(HttpStatus.OK)
   async authenticateTwoFactor(

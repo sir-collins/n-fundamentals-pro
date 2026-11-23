@@ -31,6 +31,9 @@ import { PrismaSongsModule } from './prisma-songs/prisma-songs.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaRelationsModule } from './prisma-relations/prisma-relations.module';
 import { HealthModule } from './health/health.module';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 
 @Module({
   imports: [
@@ -116,7 +119,19 @@ import { HealthModule } from './health/health.module';
     ScheduleModule.forRoot(),
     MailModule,
     HealthModule,
+    // 100 requests per client IP per minute by default; routes that check
+    // a password or TOTP code use the stricter `@AuthThrottle()`. Off under
+    // Jest (NODE_ENV=test), where every request comes from one IP; the
+    // throttling E2E suite turns it back on.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [{ ttl: 60_000, limit: 100 }],
+        skipIf: () => config.get<string>('NODE_ENV') === 'test',
+      }),
+    }),
   ],
+  providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   constructor(private readonly config: ConfigService) {}
