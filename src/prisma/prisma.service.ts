@@ -4,7 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
 
 /** Postgres schema Prisma owns — kept apart from TypeORM's "public". */
-export const PRISMA_SCHEMA = 'prisma';
+const PRISMA_SCHEMA = 'prisma';
 
 /**
  * The generated Prisma client as an injectable provider.

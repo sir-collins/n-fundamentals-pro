@@ -8,16 +8,9 @@ import {
   Param,
   ParseIntPipe,
   Post,
-  UseGuards,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Album } from '../generated/prisma/client';
 import {
   ArtistDetail,
@@ -25,9 +18,7 @@ import {
 } from './prisma-relations.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import { CreateAlbumsDto } from './dto/create-albums.dto';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { UserRole } from '../users/entities/user.entity';
+import { AdminOnly } from '../auth/decorators/admin-only.decorator';
 
 // Inline Swagger schemas: Prisma's generated types have no runtime class to
 // carry @ApiProperty.
@@ -52,7 +43,6 @@ export class PrismaArtistsController {
    * Delete every artist with no songs and no albums. Requires an
    * authenticated `admin`.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Delete every artist with no songs and no albums. Requires an authenticated admin.',
@@ -62,10 +52,7 @@ export class PrismaArtistsController {
     description: 'How many artists were deleted.',
     schema: countSchema,
   })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   // Declared before the `:id` routes: Nest matches in declaration order, so
   // a later `DELETE :id` can't swallow it.
   @Delete('orphans')
@@ -108,7 +95,6 @@ export class PrismaArtistsController {
    * Add an album to an artist. Requires an authenticated `admin`.
    * @throws NotFoundException if no artist exists with `id`.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Add an album to an artist. Requires an authenticated admin.',
   })
@@ -118,11 +104,8 @@ export class PrismaArtistsController {
     schema: albumSchema,
   })
   @ApiResponse({ status: 400, description: 'Invalid payload.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({ status: 404, description: 'No artist exists with this id.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post(':id/albums')
   @HttpCode(HttpStatus.CREATED)
   async addAlbum(
@@ -143,7 +126,6 @@ export class PrismaArtistsController {
    * already has are skipped. Requires an authenticated `admin`.
    * @throws NotFoundException if no artist exists with `id`.
    */
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Add several albums to an artist; existing titles are skipped. Requires an authenticated admin.',
@@ -156,11 +138,8 @@ export class PrismaArtistsController {
     },
   })
   @ApiResponse({ status: 400, description: 'Invalid payload.' })
-  @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
-  @ApiResponse({ status: 403, description: 'Authenticated but not admin.' })
   @ApiResponse({ status: 404, description: 'No artist exists with this id.' })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post(':id/albums/bulk')
   @HttpCode(HttpStatus.CREATED)
   async addAlbums(
