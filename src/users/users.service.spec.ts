@@ -83,4 +83,46 @@ describe('UsersService', () => {
       expect(await service.consumeTotpStep(1, 100)).toBe(false);
     });
   });
+  describe('setAvatarPath', () => {
+    // The transaction's manager, standing in for the real one.
+    function withManager(existing: Partial<User> | null) {
+      const manager = {
+        findOne: jest
+          .fn<(...args: unknown[]) => Promise<Partial<User> | null>>()
+          .mockResolvedValue(existing),
+        update: jest
+          .fn<(...args: unknown[]) => Promise<{ affected: number }>>()
+          .mockResolvedValue({ affected: 1 }),
+      };
+      Object.assign(repository, {
+        manager: {
+          transaction: (work: (m: typeof manager) => Promise<unknown>) =>
+            work(manager),
+        },
+      });
+      return manager;
+    }
+
+    it('locks the row, stores the new filename, returns the old one', async () => {
+      const manager = withManager({ id: 1, avatarPath: '1-old.png' });
+
+      expect(await service.setAvatarPath(1, '1-new.png')).toEqual({
+        previous: '1-old.png',
+      });
+      expect(manager.findOne).toHaveBeenCalledWith(User, {
+        where: { id: 1 },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(manager.update).toHaveBeenCalledWith(User, 1, {
+        avatarPath: '1-new.png',
+      });
+    });
+
+    it('returns null and writes nothing for a missing user', async () => {
+      const manager = withManager(null);
+
+      expect(await service.setAvatarPath(1, '1-new.png')).toBeNull();
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+  });
 });

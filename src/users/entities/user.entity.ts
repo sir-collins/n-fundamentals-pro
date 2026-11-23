@@ -67,4 +67,10 @@ export class User {
   // first one is used. Also undecorated for GraphQL, like the fields above.
   @Column({ type: 'integer', nullable: true })
   lastTotpStep!: number | null;
+
+  // Filename of the user's avatar inside `<UPLOADS_DIR>/avatars`, generated
+  // by the server (never the client's filename). `null` until one is
+  // uploaded. Undecorated for GraphQL: avatars are REST-only.
+  @Column({ type: 'varchar', nullable: true })
+  avatarPath!: string | null;
 }

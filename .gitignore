@@ -1,6 +1,9 @@
 # compiled output
 /dist
 
+# user-uploaded files (avatars); see UPLOADS_DIR
+/uploads
+
 # Prisma's generated client — rebuilt by `prisma generate` (postinstall)
 /src/generated
 /node_modules

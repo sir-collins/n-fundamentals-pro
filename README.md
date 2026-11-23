@@ -21,6 +21,8 @@ explaining *why* each piece was built the way it was. Start at
 | **Comments** | Threaded comments on songs, stored in **MongoDB** (polyglot persistence) | `src/comments/` |
 | **Real time** | Live comment notifications over **WebSockets** (Socket.IO) | `src/comments/`, [`public/realtime-comments.html`](./public/realtime-comments.html) |
 | **GraphQL** | A code-first API at `/graphql` over the same services: queries, guarded mutations, a `commentAdded` subscription, **DataLoader** batching, Apollo **response caching**, and artist profiles fetched live from **Deezer's** API | `*.resolver.ts`, [`schema.gql`](./schema.gql), [`public/graphql-comment-subscriptions.html`](./public/graphql-comment-subscriptions.html) |
+| **Avatars** | Upload (`PUT /users/me/avatar`, PNG/JPEG/WebP ≤ 2 MB, checked by magic numbers) and public download (`GET /users/:id/avatar`) | `src/users/`, `src/common/validators/` |
+| **Events & jobs** | `@CurrentUser()` param decorator; a `user.created` event drives the (logged) welcome email; a nightly CRON job deletes orphaned artists | `src/auth/decorators/`, `src/mail/`, `src/artists/orphan-artists-cleanup.job.ts` |
 | **Prisma rebuild** | `/prisma/songs` mirrors `/songs` on Prisma, plus albums (one-to-many), lyrics (one-to-one), bulk operations and an all-or-nothing import (interactive transaction) | `src/prisma*/`, [`prisma/schema.prisma`](./prisma/schema.prisma) |
 
 The Prisma vs TypeORM comparison, including the SQL each ORM actually
@@ -41,6 +43,8 @@ sends, is written up in
 - **Swagger/OpenAPI** (`@nestjs/swagger`)
 - **Socket.IO** WebSockets, and **GraphQL** with Apollo (`graphql-ws` for
   subscriptions)
+- **`@nestjs/event-emitter`** and **`@nestjs/schedule`**; **multer** for
+  uploads
 - **Jest** + **supertest** for unit and E2E tests
 - Postgres and MongoDB run locally through `docker-compose.yml`
 
@@ -85,6 +89,7 @@ failing later.
 | `NODE_ENV` | `development` / `production` / `test` (default `development`) |
 | `ENABLE_SWAGGER` | Serve the docs at `/api` (default `true`) |
 | `DEEZER_API_URL` | Base URL for artist profiles (default `https://api.deezer.com`) |
+| `UPLOADS_DIR` | Where uploaded avatars are written (default `uploads`, gitignored) |
 
 None of these are committed per environment (there's no `.env.production`).
 A real deployment sets its own values in its host's dashboard.
@@ -140,9 +145,15 @@ npm run test:cov     # coverage
 The **E2E suites run against the real Postgres and MongoDB from `.env`**,
 so Docker must be up and both sets of migrations applied. Each suite
 stamps its data (`E2E … <timestamp>`) and deletes it afterwards. One
-exception: `DELETE /prisma/artists/orphans` removes *every* orphaned
-Prisma artist, so run the suites against a dev database, never one with
-data you care about.
+exception: `DELETE /prisma/artists/orphans` and the orphaned-artist CRON
+job remove *every* orphaned artist (Prisma and TypeORM respectively), so
+run the suites against a dev database, never one with data you care about.
+
+Three packages (`@nestjs/mongoose`, `@nestjs/event-emitter`,
+`@nestjs/schedule`) ship as ES modules only, so both Jest configs list them
+in `transformIgnorePatterns`. Nest's own `FileTypeValidator` can't load its
+ESM dependency under this setup, which is why uploads use
+`ImageSignatureValidator` instead (see `docs/03-journal.md`).
 
 Notable suites:
 - `test/rest.e2e-spec.ts` and `test/graphql.e2e-spec.ts`: the two API
@@ -151,6 +162,8 @@ Notable suites:
   operations and transactions (rollback checked against the database itself)
 - `test/songs-parity.e2e-spec.ts`: the same scenarios against `/songs`
   *and* `/prisma/songs`, holding the two ORMs to identical behaviour
+- `test/uploads.e2e-spec.ts`: avatar uploads against a temp directory,
+  including a text file disguised as a PNG
 
 ## Deployment
 
@@ -159,7 +172,9 @@ MongoDB, configured through Railway's dashboard; see
 [`railway.json`](./railway.json) and `docs/03-journal.md`). As of
 2026-11-06 the Railway service is **paused**, and its URL returns
 *"Application not found"*. Prisma's migrations were never applied there
-either: the Prisma work (Project 9) is local-only.
+either: the Prisma work (Project 9) is local-only. Avatars are stored on
+local disk, which Railway wipes on every deploy, so they'd need object
+storage (S3, R2) or a Railway volume before going live there.
 
 Merges to `master` no longer trigger a deploy. `railway.json` sets
 `build.watchPatterns` to `/.railway-deploy`, a file that doesn't exist,
@@ -181,7 +196,7 @@ Postgres.
 | 7 | Real-Time Layer (WebSockets) | ✅ |
 | 8 | GraphQL API | ✅ |
 | 9 | Rebuild the Data Layer with Prisma | ✅ |
-| 10 | Capstone: Advanced Feature Grab Bag | Not started |
+| 10 | Capstone: Advanced Feature Grab Bag (decorator, events, CRON, uploads) | ✅ |
 
 The live checklist, with notes on how each item was done, is
 [`docs/01-progress.md`](./docs/01-progress.md). The full roadmap is

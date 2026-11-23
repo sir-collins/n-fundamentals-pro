@@ -1297,7 +1297,7 @@ model, a parity suite holding them to the same behaviour, and a measured
 write-up of where they differ. Still local-only: no `prisma migrate
 deploy` on Railway.
 
-## Project 10: Capstone — Advanced Feature Grab Bag — In progress
+## Project 10: Capstone — Advanced Feature Grab Bag — ✅ Done
 
 Chosen four (of the roadmap's seven): custom decorator, Event Emitter,
 CRON scheduling, file upload. Queues left as a stretch goal (needs Redis).
@@ -1367,4 +1367,40 @@ CRON scheduling, file upload. Queues left as a stretch goal (needs Redis).
       `npm test` 164/22; `npm run test:e2e` 112/8; `tsc`, eslint,
       Prettier, build clean. The E2E run also deleted the 2 orphans
       already in the dev DB, as intended.
-- [ ] File upload
+- [x] File upload: user avatars — `PUT /users/me/avatar` (JWT,
+      `@CurrentUser('id')` from step 1) and public `GET /users/:id/avatar`
+      (`StreamableFile`), in a new `UsersController`. Multer
+      (`FileInterceptor`, memory storage) with `limits.fileSize` 2 MB (413
+      before buffering a huge file), then `ParseFilePipe` with
+      `MaxFileSizeValidator` and our own `ImageSignatureValidator`
+      (`src/common/validators/image-signature.validator.ts`), which checks
+      PNG/JPEG/WebP magic numbers. Nest's `FileTypeValidator` does the same
+      through ESM-only `file-type`, which can't load under this Jest setup
+      (rejects every file); `--experimental-vm-modules` fixes it but breaks
+      13 suites, so we chose our own (user's call). Files go to
+      `<UPLOADS_DIR>/avatars` (new env var, default `uploads`, gitignored)
+      as `<userId>-<uuid>.<ext>`, extension from the *detected* type,
+      never the client's name. `User.avatarPath` (migration
+      `AddUserAvatarPath`) is set in a row-locked transaction that returns
+      the previous file, which is then deleted. Swagger shows a file
+      picker. REST only. The controller has `/// <reference types="multer" />`
+      so the editor finds `Express.Multer.File` (it didn't otherwise). Tests: validator, storage (real temp dir), users
+      service, controller unit specs; new `test/uploads.e2e-spec.ts`
+      (storage provider overridden to a temp dir): 401, missing file 400,
+      text claiming `image/png` 400, > 2 MB 413, real PNG round-trips
+      byte-for-byte with the server's filename, re-upload deletes the old
+      file and stores `.jpg` for JPEG bytes sent as `image/png`, no avatar
+      404. Sanity: validator trusting the claimed type → the fake PNG test
+      fails (500: the controller's own detection then refuses it, so
+      nothing is written). `npm test` 179/25; `npm run test:e2e` 119/9;
+      `tsc`, eslint, Prettier, build clean. Manual run against the built
+      app not done (command declined). **Production caveat:** Railway's
+      disk is wiped on deploy, so avatars need object storage or a volume
+      there.
+
+**Outcome achieved:** four of the seven capstone features, each one a
+separate PR: a custom decorator, an event-driven side effect, a scheduled
+job and validated file uploads. Queues, cookies/sessions and streaming (beyond
+the avatar download) were not built. Production caveats carried forward:
+Railway is paused, Prisma migrations were never deployed there, and uploads
+need durable storage before they could be.

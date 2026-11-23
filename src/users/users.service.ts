@@ -78,4 +78,33 @@ export class UsersService {
     );
     return result.affected === 1;
   }
+
+  /**
+   * Point a user's avatar at a newly stored file.
+   *
+   * Reads the old filename and writes the new one in one transaction,
+   * with the row locked (`FOR UPDATE`), so two uploads racing for the same
+   * user can't both read the same old file and leave one new file behind
+   * with nothing pointing at it.
+   * @returns the previous filename (so the caller can delete that file),
+   *   or `null` if no user exists with `id`.
+   */
+  async setAvatarPath(
+    id: number,
+    filename: string,
+  ): Promise<{ previous: string | null } | null> {
+    return this.usersRepository.manager.transaction(async (manager) => {
+      const user = await manager.findOne(User, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!user) {
+        return null;
+      }
+
+      await manager.update(User, id, { avatarPath: filename });
+      return { previous: user.avatarPath };
+    });
+  }
 }
