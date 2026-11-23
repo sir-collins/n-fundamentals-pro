@@ -4,9 +4,9 @@ import type { Artist, Song } from '../generated/prisma/client';
 import { isNotFound } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSongDto } from '../songs/dto/create-song.dto';
-import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { UpdateSongInput } from '../songs/dto/update-song.input';
-import { Paginated } from '../songs/songs.service';
+import { Paginated } from '../common/pagination/paginated';
 
 export type SongWithArtists = Song & { artists: Artist[] };
 

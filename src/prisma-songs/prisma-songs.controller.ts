@@ -25,9 +25,9 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { PrismaSongsService, SongWithArtists } from './prisma-songs.service';
-import { Paginated } from '../songs/songs.service';
+import { Paginated } from '../common/pagination/paginated';
 import { CreateSongDto } from '../songs/dto/create-song.dto';
-import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { UpdateSongInput } from '../songs/dto/update-song.input';
 import { Song } from '../songs/entities/song.entity';
 import { Roles } from '../auth/decorators/roles.decorator';

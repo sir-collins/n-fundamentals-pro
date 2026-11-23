@@ -24,9 +24,10 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { SongsService, Paginated } from './songs.service';
+import { SongsService } from './songs.service';
+import { Paginated } from '../common/pagination/paginated';
 import { CreateSongDto } from './dto/create-song.dto';
-import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { UpdateSongInput } from './dto/update-song.input';
 import { Song } from './entities/song.entity';
 import { Roles } from '../auth/decorators/roles.decorator';

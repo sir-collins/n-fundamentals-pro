@@ -6,6 +6,8 @@ import { Comment, CommentDocument } from './schemas/comment.schema';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CommentsGateway } from './comments.gateway';
 import { PUB_SUB } from './pub-sub.provider';
+import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
+import { Paginated } from '../common/pagination/paginated';
 
 /** Comment storage in MongoDB, plus real-time fan-out of new comments. */
 @Injectable()
@@ -55,9 +57,26 @@ export class CommentsService {
     return comment;
   }
 
-  /** Every comment on `songId`, flat, with each reply's parent populated. */
-  findAllForSong(songId: number): Promise<CommentDocument[]> {
-    return this.commentModel.find({ songId }).populate('parentComment').exec();
+  /**
+   * One page of the comments on `songId`, oldest first, flat, with each
+   * reply's parent populated. `_id` breaks ties between equal timestamps so
+   * pages never overlap or skip.
+   */
+  async findAllForSong(
+    songId: number,
+    { page, limit }: PaginationQueryDto,
+  ): Promise<Paginated<CommentDocument>> {
+    const [data, total] = await Promise.all([
+      this.commentModel
+        .find({ songId })
+        .sort({ createdAt: 1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('parentComment')
+        .exec(),
+      this.commentModel.countDocuments({ songId }).exec(),
+    ]);
+    return { data, total };
   }
 
   /** Find a comment by id, or `null` if none exists. */
