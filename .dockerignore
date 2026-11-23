@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+uploads
+src/generated
+.env
+.env.*
+!.env.example
+.git
+.github
+.vscode
+.idea
+docs
+*.md
+*.session.sql
+rest-client.http

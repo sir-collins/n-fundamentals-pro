@@ -1,3 +1,15 @@
+# `docker compose up -d` starts the databases for local development.
+# `docker compose --profile app up -d --build` also runs the migrations and
+# the API itself, from the Dockerfile, on http://localhost:3000.
+x-app-env: &app-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USERNAME: nestjs
+  DB_PASSWORD: nestjs
+  DB_NAME: n_fundamentals
+  MONGO_URI: mongodb://mongo:27017/n_fundamentals
+  JWT_SECRET: ${JWT_SECRET:-local-compose-secret-change-me-in-any-real-deployment}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -10,9 +22,13 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nestjs -d n_fundamentals']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  # No auth on the container itself — matches the same local-dev-only
-  # pragmatism as postgres's own simple, non-production credentials above.
+  # No auth: local development only, like the Postgres credentials above.
   mongo:
     image: mongo:7
     container_name: n-fundamentals-mongo
@@ -20,7 +36,41 @@ services:
       - '27017:27017'
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 })']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    profiles: [app]
+    build:
+      context: .
+      target: migrate
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: [app]
+    build:
+      context: .
+      target: runtime
+    environment:
+      <<: *app-env
+      ENABLE_SWAGGER: 'true'
+    ports:
+      - '3000:3000'
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   mongo_data:
+  uploads:
