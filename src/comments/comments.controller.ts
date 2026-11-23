@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,7 +6,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -31,16 +29,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
- * REST endpoints for comments on `songs` — backed by MongoDB
- * (`CommentsService`), unlike every other resource in this app so far.
- * Routes deliberately span two bases (`songs/:songId/comments` and
- * `comments/:id`), so this controller uses full explicit paths per
- * route rather than a single class-level `@Controller(...)` prefix.
+ * REST endpoints for song comments, stored in MongoDB. Routes span two
+ * bases (`songs/:songId/comments` and `comments/:id`), so each route has a
+ * full path instead of a class-level prefix.
  *
- * Unlike `songs` mutations (admin-only), any authenticated user can post
- * a comment — this is user-generated content, not curated catalog data.
- * Deleting one's own comment doesn't need `RolesGuard` either: it's a
- * resource-*ownership* check (author or admin), not a role check.
+ * Any authenticated user can comment. Delete is an ownership check (author
+ * or admin) done in the handler, so `RolesGuard` isn't used.
  */
 @ApiTags('comments')
 @Controller()
@@ -71,35 +65,18 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @CurrentUser() user: AuthUser,
   ): Promise<CommentDocument> {
-    try {
-      const song = await this.songsService.findOne(songId);
+    const song = await this.songsService.findOne(songId);
 
-      if (!song) {
-        throw new NotFoundException(`Song with id ${songId} was not found`);
-      }
-
-      return await this.commentsService.create(
-        songId,
-        user.id,
-        user.email,
-        dto,
-      );
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to create comment');
+    if (!song) {
+      throw new NotFoundException(`Song with id ${songId} was not found`);
     }
+
+    return await this.commentsService.create(songId, user.id, user.email, dto);
   }
 
   /**
-   * List every comment on a song — public, same as song reads. Flat list
-   * (not a nested tree); each reply's immediate parent comes back
-   * populated inline via Mongoose's `ref`.
+   * List every comment on a song. Public. A flat list, with each reply's
+   * immediate parent populated inline.
    * @throws NotFoundException if no song exists with `songId`.
    */
   @ApiOperation({
@@ -112,21 +89,13 @@ export class CommentsController {
   async findAllForSong(
     @Param('songId', ParseIntPipe) songId: number,
   ): Promise<CommentDocument[]> {
-    try {
-      const song = await this.songsService.findOne(songId);
+    const song = await this.songsService.findOne(songId);
 
-      if (!song) {
-        throw new NotFoundException(`Song with id ${songId} was not found`);
-      }
-
-      return await this.commentsService.findAllForSong(songId);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to fetch comments');
+    if (!song) {
+      throw new NotFoundException(`Song with id ${songId} was not found`);
     }
+
+    return await this.commentsService.findAllForSong(songId);
   }
 
   /**
@@ -152,34 +121,23 @@ export class CommentsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
   ): Promise<{ message: string }> {
-    try {
-      if (!Types.ObjectId.isValid(id)) {
-        throw new NotFoundException(`Comment with id ${id} was not found`);
-      }
-
-      const comment = await this.commentsService.findOne(id);
-
-      if (!comment) {
-        throw new NotFoundException(`Comment with id ${id} was not found`);
-      }
-
-      if (comment.authorId !== user.id && user.role !== UserRole.ADMIN) {
-        throw new ForbiddenException(
-          'Only the comment author or an admin can delete this comment',
-        );
-      }
-
-      await this.commentsService.remove(id);
-      return { message: 'Comment deleted' };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ForbiddenException
-      ) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to delete comment');
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException(`Comment with id ${id} was not found`);
     }
+
+    const comment = await this.commentsService.findOne(id);
+
+    if (!comment) {
+      throw new NotFoundException(`Comment with id ${id} was not found`);
+    }
+
+    if (comment.authorId !== user.id && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only the comment author or an admin can delete this comment',
+      );
+    }
+
+    await this.commentsService.remove(id);
+    return { message: 'Comment deleted' };
   }
 }

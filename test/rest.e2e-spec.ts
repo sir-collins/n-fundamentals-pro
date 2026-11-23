@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getModelToken } from '@nestjs/mongoose';
 import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
@@ -16,13 +16,14 @@ import { Artist } from './../src/artists/entities/artist.entity';
 import { ApiKey } from './../src/auth/entities/api-key.entity';
 import { Comment } from './../src/comments/schemas/comment.schema';
 import { MailService } from './../src/mail/mail.service';
+import { SongsService } from './../src/songs/songs.service';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import {
   ORPHAN_ARTISTS_CLEANUP,
   OrphanArtistsCleanupJob,
 } from './../src/artists/orphan-artists-cleanup.job';
 
-/** REST's error shape, from HttpExceptionFilter. */
+/** REST's error shape, from AllExceptionsFilter. */
 interface RestError {
   statusCode: number;
   timestamp: string;
@@ -163,6 +164,33 @@ describe('REST API (e2e)', () => {
       expect(Number.isNaN(Date.parse((res.body as RestError).timestamp))).toBe(
         false,
       );
+    });
+
+    it('logs an unexpected failure and returns a generic 500', async () => {
+      const findOne = jest
+        .spyOn(app.get(SongsService), 'findOne')
+        .mockRejectedValue(new Error('connection refused'));
+      const logError = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        const res = await http().get('/songs/1').expect(500);
+
+        expect(res.body).toEqual({
+          statusCode: 500,
+          timestamp: expect.any(String),
+          path: '/songs/1',
+          message: 'Internal server error',
+        });
+        expect(logError).toHaveBeenCalledWith(
+          'GET /songs/1 failed',
+          expect.stringContaining('connection refused'),
+        );
+      } finally {
+        findOne.mockRestore();
+        logError.mockRestore();
+      }
     });
 
     it('rejects a non-numeric id before any handler runs', async () => {

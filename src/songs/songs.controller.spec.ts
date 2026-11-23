@@ -1,11 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/nestjs-testing';
 import { beforeEach, describe, expect, it } from '@jest/globals';
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SongsController } from './songs.controller';
 import { SongsService } from './songs.service';
 import { Song } from './entities/song.entity';
@@ -41,12 +37,10 @@ describe('SongsController', () => {
       expect(await controller.create(dto)).toBe(song);
     });
 
-    it('wraps an unexpected service failure as a 500', async () => {
+    it('lets an unexpected service failure reach the global filter', async () => {
       songsService.create.mockRejectedValue(new Error('db down'));
 
-      await expect(controller.create(dto)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(controller.create(dto)).rejects.toThrow('db down');
     });
   });
 
@@ -58,11 +52,11 @@ describe('SongsController', () => {
       expect(await controller.findAll({ page: 1, limit: 10 })).toBe(page);
     });
 
-    it('wraps an unexpected service failure as a 500', async () => {
+    it('lets an unexpected service failure reach the global filter', async () => {
       songsService.findAll.mockRejectedValue(new Error('db down'));
 
       await expect(controller.findAll({ page: 1, limit: 10 })).rejects.toThrow(
-        InternalServerErrorException,
+        'db down',
       );
     });
   });
@@ -81,12 +75,10 @@ describe('SongsController', () => {
       await expect(controller.findOne(999)).rejects.toThrow(NotFoundException);
     });
 
-    it('wraps an unexpected service failure as a 500, not a 404', async () => {
+    it('lets an unexpected service failure reach the global filter', async () => {
       songsService.findOne.mockRejectedValue(new Error('db down'));
 
-      await expect(controller.findOne(1)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(controller.findOne(1)).rejects.toThrow('db down');
     });
   });
 

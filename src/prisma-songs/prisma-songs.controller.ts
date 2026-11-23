@@ -12,7 +12,6 @@ import {
   Query,
   UseGuards,
   BadRequestException,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,7 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { PrismaSongsService, SongWithArtists } from './prisma-songs.service';
 import { Paginated } from '../songs/songs.service';
-import { CreateSongDto } from '../songs/dto/create-song-dto';
+import { CreateSongDto } from '../songs/dto/create-song.dto';
 import { PaginationQueryDto } from '../songs/dto/pagination-query.dto';
 import { UpdateSongInput } from '../songs/dto/update-song.input';
 import { Song } from '../songs/entities/song.entity';
@@ -36,14 +35,12 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/entities/user.entity';
 
 /**
- * REST endpoints for songs stored through Prisma (Project 9) — a mirror of
- * `SongsController` at `/prisma/songs`: same routes, guards, status codes,
- * error messages and guard-clause/catch shape, so the only difference
- * between the two is the service (and so the ORM) underneath.
+ * Mirror of `SongsController` at `/prisma/songs`: same routes, guards,
+ * status codes and error messages, so the only difference is the ORM.
  *
- * Swagger types reuse the TypeORM `Song` class purely as documentation:
- * Prisma's generated `Song` is a TypeScript type with no runtime presence,
- * so it can't carry `@ApiProperty()`. The JSON shapes are identical.
+ * Swagger reuses the TypeORM `Song` class for documentation only: Prisma's
+ * generated `Song` is a type with no runtime class to carry `@ApiProperty()`.
+ * The JSON shapes are identical.
  */
 @ApiTags('prisma-songs')
 @ApiExtraModels(Song)
@@ -62,11 +59,7 @@ export class PrismaSongsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createSongDto: CreateSongDto): Promise<SongWithArtists> {
-    try {
-      return await this.songsService.create(createSongDto);
-    } catch {
-      throw new InternalServerErrorException('Failed to create song');
-    }
+    return this.songsService.create(createSongDto);
   }
 
   /** List songs, one page at a time (`?page=&limit=`, both optional). */
@@ -88,11 +81,7 @@ export class PrismaSongsController {
   async findAll(
     @Query() pagination: PaginationQueryDto,
   ): Promise<Paginated<SongWithArtists>> {
-    try {
-      return await this.songsService.findAll(pagination);
-    } catch {
-      throw new InternalServerErrorException('Failed to fetch songs');
-    }
+    return this.songsService.findAll(pagination);
   }
 
   /**
@@ -107,21 +96,13 @@ export class PrismaSongsController {
   async findOne(
     @Param('id', ParseIntPipe) id: number,
   ): Promise<SongWithArtists> {
-    try {
-      const song = await this.songsService.findOne(id);
+    const song = await this.songsService.findOne(id);
 
-      if (!song) {
-        throw new NotFoundException(`Song with id ${id} was not found`);
-      }
-
-      return song;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to fetch song');
+    if (!song) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
     }
+
+    return song;
   }
 
   /**
@@ -135,8 +116,7 @@ export class PrismaSongsController {
     summary:
       'Update a song by id. Only the supplied fields are changed. Requires an authenticated admin.',
   })
-  // Same as SongsController.update: UpdateSongInput carries the validation
-  // rules but no @ApiProperty, so Swagger documents the full DTO.
+  // UpdateSongInput has no @ApiProperty, so Swagger documents CreateSongDto.
   @ApiBody({ type: CreateSongDto, description: 'Any subset of these fields.' })
   @ApiResponse({ status: 200, description: 'The updated song.', type: Song })
   @ApiResponse({ status: 400, description: 'Empty or invalid payload.' })
@@ -151,28 +131,17 @@ export class PrismaSongsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateSongInput,
   ): Promise<SongWithArtists> {
-    try {
-      if (!body || Object.keys(body).length === 0) {
-        throw new BadRequestException('Song update payload is required');
-      }
-
-      const song = await this.songsService.update(id, body);
-
-      if (!song) {
-        throw new NotFoundException(`Song with id ${id} was not found`);
-      }
-
-      return song;
-    } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException
-      ) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to update song');
+    if (!body || Object.keys(body).length === 0) {
+      throw new BadRequestException('Song update payload is required');
     }
+
+    const song = await this.songsService.update(id, body);
+
+    if (!song) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
+    }
+
+    return song;
   }
 
   /**
@@ -192,18 +161,10 @@ export class PrismaSongsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    try {
-      const removed = await this.songsService.remove(id);
+    const removed = await this.songsService.remove(id);
 
-      if (!removed) {
-        throw new NotFoundException(`Song with id ${id} was not found`);
-      }
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to delete song');
+    if (!removed) {
+      throw new NotFoundException(`Song with id ${id} was not found`);
     }
   }
 }

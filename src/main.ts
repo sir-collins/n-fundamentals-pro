@@ -4,11 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { configureApp } from './configure-app';
 
-// Only ever populated when running under webpack (start:hmr) — narrowly
-// typed instead of Nest's docs' `any` so this doesn't trip the project's
-// no-unsafe-member-access/no-unsafe-call ESLint rules.
+// Set only under webpack (start:hmr). Typed narrowly rather than `any` to
+// satisfy the no-unsafe-* ESLint rules.
 declare const module: {
   hot?: {
     accept(): void;
@@ -19,35 +19,38 @@ declare const module: {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   configureApp(app);
-
-  // Serves public/ (currently just realtime-comments.html, the Project 7
-  // WebSocket demo page) via @nestjs/platform-express's existing static
-  // support — no new dependency needed just for this.
-  app.useStaticAssets(join(__dirname, '..', 'public'));
+  app.enableShutdownHooks();
 
   const configService = app.get(ConfigService);
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
 
-  // Gated behind its own dedicated var rather than tied to NODE_ENV —
-  // explicit and independently toggleable. Off by default would be the
-  // safer production default, but this defaults to on (see
-  // env.validation.ts) to keep the existing dev workflow unchanged;
-  // a real deployment sets ENABLE_SWAGGER=false directly in its own
-  // dashboard if the full route list/auth shapes shouldn't be public.
+  // CSP only in production: Swagger UI, the Apollo landing page and the
+  // demo pages in public/ rely on inline or CDN scripts.
+  app.use(helmet({ contentSecurityPolicy: isProduction ? undefined : false }));
+
+  const corsOrigin = configService.get<string>('CORS_ORIGIN');
+  if (corsOrigin) {
+    app.enableCors({
+      origin: corsOrigin.split(',').map((origin) => origin.trim()),
+    });
+  }
+
+  // The WebSocket and GraphQL-subscription demo pages.
+  app.useStaticAssets(join(__dirname, '..', 'public'));
+
+  // Its own flag rather than tied to NODE_ENV. Defaults to on (see
+  // env.validation.ts); set ENABLE_SWAGGER=false to hide the docs.
   if (configService.get<boolean>('ENABLE_SWAGGER')) {
-    // Two independent, named security schemes — this API supports both a
-    // JWT bearer token and an `x-api-key` header as separate auth
-    // mechanisms, and Swagger UI's "Authorize" modal needs a scheme name
-    // per mechanism to show a separate input for each. `addBearerAuth()`'s
-    // default scheme name ('bearer') matches `@ApiBearerAuth()` used with
-    // no arguments; the API key scheme is named 'api-key' to match
-    // `@ApiSecurity('api-key')`.
+    // Scheme names must match the decorators: addBearerAuth()'s default
+    // 'bearer' for @ApiBearerAuth(), 'api-key' for @ApiSecurity('api-key').
     const swaggerDocument = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
-        .setTitle('n-fundamentals-pro API')
+        .setTitle('Music Catalog API')
         .setDescription(
-          'A NestJS learning project: songs/artists CRUD behind a layered ' +
-            'auth system (password + JWT, roles, 2FA, API keys).',
+          'Songs, artists, users and comments over REST, GraphQL and ' +
+            'WebSockets, behind JWT auth with roles, 2FA and API keys. ' +
+            'Routes under /prisma mirror the TypeORM ones on Prisma.',
         )
         .setVersion('1.0')
         .addBearerAuth()
@@ -60,18 +63,14 @@ async function bootstrap() {
     SwaggerModule.setup('api', app, swaggerDocument);
   }
 
-  // dotenv (under ConfigModule.forRoot) doesn't override a variable
-  // already set in the shell environment, so `PORT=3001 npm run
-  // start:dev` still wins over .env's PORT for scratch-port testing.
+  // A PORT set in the shell overrides .env's.
   await app.listen(configService.get<number>('PORT') ?? 3000);
 
-  // Only defined when running under webpack (start:hmr) — under the normal
-  // tsc build/start:dev this branch never runs. On a hot update, dispose()
-  // closes this app instance (including the TypeORM connection) right
-  // before webpack re-runs bootstrap() with the new code.
+  // On a hot update, close this instance (and its DB connections) before
+  // webpack re-runs bootstrap().
   if (module.hot) {
     module.hot.accept();
     module.hot.dispose(() => void app.close());
   }
 }
-bootstrap();
+void bootstrap();

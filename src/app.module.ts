@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { Module, MiddlewareConsumer } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -7,8 +7,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { SongsModule } from './songs/songs.module';
 import { Song } from './songs/entities/song.entity';
 import { Artist } from './artists/entities/artist.entity';
@@ -16,7 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { User } from './users/entities/user.entity';
 import { ApiKey } from './auth/entities/api-key.entity';
 import { CommentsModule } from './comments/comments.module';
-import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { ArtistsModule } from './artists/artists.module';
 import { ArtistsService } from './artists/artists.service';
 import {
@@ -32,20 +30,15 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PrismaSongsModule } from './prisma-songs/prisma-songs.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaRelationsModule } from './prisma-relations/prisma-relations.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
-    // isGlobal: true so ConfigService is injectable anywhere (AuthModule,
-    // JwtStrategy) without re-importing ConfigModule per module.
-    // validationSchema means a missing/malformed required env var makes
-    // the app refuse to boot, rather than silently running with undefined.
+    // A missing or malformed env var stops the app at boot.
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: envValidationSchema,
     }),
-    // Opens the connection to the Postgres started via docker-compose.yml.
-    // Connection values now come from validated env vars (see
-    // src/config/env.validation.ts) instead of hardcoded literals.
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -56,34 +49,21 @@ import { PrismaRelationsModule } from './prisma-relations/prisma-relations.modul
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
         entities: [Song, Artist, User, ApiKey],
-        // Schema changes now go through explicit, committed migrations
-        // (npm run migration:generate/run/revert — see
-        // src/database/data-source.ts and src/database/migrations/)
-        // instead of auto-syncing on every boot. Deliberately no
-        // migrationsRun here either — running a migration stays a
-        // conscious step, not something that happens silently at startup.
+        // Schema changes go through committed migrations (see
+        // src/database/), and no migrationsRun: applying one is an
+        // explicit step, not part of startup.
         synchronize: false,
       }),
     }),
-    // The polyglot-persistence piece: comments live in Mongo (via
-    // docker-compose.yml's mongo service) instead of Postgres — a
-    // schema-flexible store fits user-generated content better than a
-    // migration for every shape change. No `entities`/`synchronize`
-    // equivalent here — Mongoose schemas register per-module via
-    // `MongooseModule.forFeature(...)` (see comments.module.ts).
+    // Comments only; see comments/schemas/comment.schema.ts.
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGO_URI'),
       }),
     }),
-    // A second, parallel API layer over the same domain/services as the
-    // REST controllers — code-first: types/inputs come from decorators
-    // already on existing classes (Song, CreateSongDto, ...), not a
-    // hand-written schema. autoSchemaFile writes the generated schema to
-    // a real, committed file (not gitignored) so schema changes show up
-    // as a visible diff in PRs, same as every other generated-but-tracked
-    // artifact in this project (migrations, railway.json).
+    // Code-first. schema.gql is committed so schema changes show up in
+    // PR diffs.
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       imports: [ArtistsModule],
@@ -94,29 +74,23 @@ import { PrismaRelationsModule } from './prisma-relations/prisma-relations.modul
       ) => ({
         autoSchemaFile: join(process.cwd(), 'schema.gql'),
         sortSchema: true,
-        // Enables the `graphql-ws` protocol so `@Subscription()` resolvers
-        // (CommentsResolver) work — the transport package itself
-        // (graphql-ws) is already a dependency of @nestjs/graphql, not
-        // something this project had to add.
+        // Needed for CommentsResolver's subscription.
         subscriptions: { 'graphql-ws': true },
         // Caches whole query results in memory, per process, for as long
         // as the response's cache hints allow (see common/cache-control.ts).
         plugins: [responseCachePlugin()],
         buildSchemaOptions: { directives: [cacheControlDirective] },
-        // Nest skips guards/interceptors/filters on @ResolveField resolvers
-        // unless listed here — without 'filters', a field resolver's
-        // HttpException (e.g. Artist.profile's BadGatewayException) bypasses
-        // HttpExceptionFilter and reaches clients as a bare
-        // INTERNAL_SERVER_ERROR. Filters only: guards and interceptors
-        // aren't needed per field, and each enhancer listed adds per-field
-        // overhead.
+        // Nest skips enhancers on @ResolveField unless listed here. Without
+        // 'filters', a field resolver's HttpException (e.g. Artist.profile's
+        // BadGatewayException) bypasses AllExceptionsFilter and reaches
+        // clients as INTERNAL_SERVER_ERROR. Only filters: each enhancer
+        // adds per-field overhead.
         fieldResolverEnhancers: ['filters'],
-        // Runs once per operation, so every request gets fresh DataLoaders
-        // (a shared one would keep serving stale cached results). Chosen
-        // over a `Scope.REQUEST` provider, which would make every resolver
-        // injecting it request-scoped too. `req` must stay: GqlAuthGuard
-        // and AuthResolver.profile read it. Subscriptions call this too,
-        // without a `req` — harmless, they never use the loaders.
+        // Runs per operation, so each request gets fresh DataLoaders (a
+        // shared one would serve stale cached results). Preferred over a
+        // `Scope.REQUEST` provider, which would make every injecting
+        // resolver request-scoped. GqlAuthGuard reads `req`. Subscriptions
+        // call this without a `req`; they never use the loaders.
         context: ({ req }: { req: GqlContext['req'] }): GqlContext => ({
           req,
           loaders: {
@@ -129,29 +103,28 @@ import { PrismaRelationsModule } from './prisma-relations/prisma-relations.modul
     SongsModule,
     AuthModule,
     CommentsModule,
-    // Project 9: Prisma alongside TypeORM, in its own Postgres schema
-    // ("prisma") — see prisma/schema.prisma. Songs served at /prisma/songs;
-    // artists/albums and lyrics (the relations) at /prisma/artists and
-    // /prisma/songs/:id/lyrics.
+    // Prisma alongside TypeORM, in its own Postgres schema ("prisma"),
+    // serving the /prisma/* routes.
     PrismaModule,
     PrismaSongsModule,
     PrismaRelationsModule,
-    // In-process event bus: lets a service announce a fact (user.created)
-    // without knowing who reacts to it. Not durable: an event emitted just
-    // before a crash is lost, so it's only for side effects that may be.
+    // In-process and not durable: an event emitted just before a crash is
+    // lost, so it's only for side effects that can tolerate that.
     EventEmitterModule.forRoot(),
-    // Turns @Cron/@Interval/@Timeout methods into real scheduled jobs.
-    // Without it those decorators are inert and nothing errors: the jobs
-    // just never run (the E2E suite checks the job is registered).
+    // Without it @Cron methods are silently inert: no error, the jobs just
+    // never run (the E2E suite checks the job is registered).
     ScheduleModule.forRoot(),
     MailModule,
+    HealthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
 })
-export class AppModule {
+export class AppModule implements NestModule {
+  constructor(private readonly config: ConfigService) {}
+
   configure(consumer: MiddlewareConsumer) {
-    // Scoped to songs routes only — no other resource needs it yet.
-    consumer.apply(LoggerMiddleware).forRoutes('songs');
+    // Jest sets NODE_ENV=test; a line per request would bury test output.
+    if (this.config.get<string>('NODE_ENV') !== 'test') {
+      consumer.apply(LoggerMiddleware).forRoutes('{*splat}');
+    }
   }
 }
