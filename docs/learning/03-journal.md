@@ -3267,3 +3267,48 @@ read the list (the demo pages only listen for new comments), and
 `tsc` and the build are clean, and the Docker image and Compose stack were
 checked by hand. The new CI `docker` job is only proven once it runs on
 GitHub.
+
+## 2026-11-24 — Showcase cleanup, chunk 3: rate limiting, polish, coverage
+
+**Rate limiting was the gap a reviewer would spot.** Login and both 2FA
+endpoints accepted unlimited attempts, so a password or a 6-digit TOTP code
+(a million values) could be brute-forced. `@nestjs/throttler` is CommonJS,
+which was checked first after Terminus. Global guards run before route
+guards, so failed logins are counted before `LocalStrategy` rejects them.
+
+**GraphQL needs its own branch in the guard.** `ThrottlerGuard` reads an
+Express request and response from the HTTP context. A GraphQL resolver has
+neither there, so without help `/graphql` would either crash the guard or
+let `login` through unthrottled. `AppThrottlerGuard` takes them from the
+GraphQL context instead, and passes WebSocket traffic and subscriptions
+(no request at all) straight through. I'd assumed aliasing `login` five
+times in one mutation could get around a per-request limit. Testing showed
+graphql-js runs mutation fields serially and stops at the first non-null
+error, so a failed login ends the batch anyway. The test and the comment say
+so instead of claiming an aliasing defence.
+
+**Testing a limiter that tests can't live with.** Every E2E request comes
+from 127.0.0.1, and the suites log in dozens of times. Throttling is
+skipped when `NODE_ENV=test` (the same switch as the request logger), and
+`test/throttling.e2e-spec.ts` overrides the throttler's options provider
+(`getOptionsToken()`) with the same limits minus the skip. That tests the
+real guard and decorators rather than a mock. Sanity check: remove
+`@AuthThrottle()` from login and the sixth attempt is a 401, not a 429.
+
+**Coverage: the honest number needed both suites.** Unit-only coverage was
+64% of lines, counting the bootstrap code. Excluding setup files (main,
+modules, migrations, seed, generated client) raised it to 76%. Most of the
+rest is code only the E2E suites run. The E2E config had `rootDir: test`,
+and Jest won't collect coverage outside `rootDir`, even with `../src` globs:
+it reported `0/0`. The fix was `rootDir: ..` with `roots: [test]`. Merging
+both reports with the istanbul libraries Jest already uses gives 98.6% of
+lines and 81% of branches. That's documented in the README with the
+commands, not as a badge.
+
+**Known limits, written down.** The user chose not to add durable avatar
+storage or redeploy. The README now says plainly what isn't built and what
+it would take, so it reads as a scoped decision.
+
+**Verified.** `npm test` 189/28, `npm run test:e2e` 126/10, and lint,
+Prettier, `tsc` and the build are clean. Checked by hand against the built
+app.

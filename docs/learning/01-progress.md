@@ -1519,7 +1519,46 @@ the code was solid, but the first impression said "course exercise".
         `docker compose --profile app up` brought the stack up healthy.
       - Sanity check: without `.skip()`, the paging test fails.
 
-**Next chunk (not started):**
-- durable avatar storage (S3-compatible) before any redeploy
-- the Railway redeploy itself
-- a coverage report or badge
+### Chunk 3 — ✅ Done (2026-11-24, branch `showcase-3-rate-limit-polish`)
+
+- [x] **Rate limiting** (`@nestjs/throttler` 6.8, CommonJS):
+      - A global `AppThrottlerGuard` allows 100 requests per minute per IP.
+        `@AuthThrottle()` cuts that to 5 per minute on `POST /auth/login`,
+        `POST /auth/2fa/turn-on`, `POST /auth/2fa/authenticate` and the
+        GraphQL `login` mutation.
+      - The guard extends `ThrottlerGuard` with a GraphQL branch, without
+        which `/graphql` would bypass it. WebSocket traffic passes through.
+      - Skipped under `NODE_ENV=test`. `test/throttling.e2e-spec.ts`
+        overrides the options token to switch it back on, and checks the 6th
+        REST login (429 with `Retry-After`), the 6th GraphQL login and that
+        ordinary routes are unaffected.
+- [x] **Consistent deletes:** comment delete and API-key revoke return 204
+      with no body, like song deletes.
+- [x] **Swagger:** documented comment bodies (inline schema), the comment
+      create 400, and the avatar download's content types with a binary
+      schema.
+- [x] **Root URL:** `GET /` redirects to `/api`, or to `/health` when
+      Swagger is off. It's excluded from Swagger.
+- [x] **Coverage, documented rather than badged:**
+      - The E2E config's `rootDir` moved to the repo root (`roots: test`) so
+        Jest can collect `src/` coverage.
+      - Both configs exclude `main.ts`, modules, generated code and
+        `src/database`.
+      - New scripts `test:e2e:cov` and `coverage:merge`
+        (`scripts/merge-coverage.js`, istanbul libs).
+      - Merged: 98.6% lines, 81.2% branches. Unit tests alone: 76% lines.
+        Both are in the README.
+- [x] **README:** the old "Deployment" section is now "Deployment and known
+      limits", stating what is deliberately not built (no live demo,
+      local-disk avatars, logged email, in-memory rate limits and PubSub).
+- [x] **Verified:**
+      - `npm test` 189/28, `npm run test:e2e` 126/10; lint, Prettier, `tsc`
+        and the build are clean.
+      - Manual run of the built app: `/` gives 302 to `/api`; five bad
+        logins give 401 and the sixth 429 with `Retry-After: 60`.
+      - Sanity check: without `@AuthThrottle()` on login, the REST
+        throttling test fails (401 instead of 429).
+
+**Showcase cleanup closed (2026-11-24).** The user decided against durable
+avatar storage, a Railway redeploy and a coverage badge; the README records
+the first two as known limits. Dependabot was offered and not taken.
