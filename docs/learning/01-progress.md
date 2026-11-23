@@ -1471,10 +1471,55 @@ the code was solid, but the first impression said "course exercise".
       - Sanity check: a filter that ignores non-HTTP errors fails the
         500-shape test.
 
+### Chunk 2 — ✅ Done (2026-11-24, branch `showcase-2-docker-admin-pagination`)
+
+- [x] **Dockerfile** (multi-stage):
+      - `deps` and `build` stages run a full install, `prisma generate` and
+        the compile.
+      - A `migrate` target applies both migration sets.
+      - The `runtime` image holds production deps, `dist` and `public`. It
+        runs as `node`, with a `HEALTHCHECK` on `/health`, at 427 MB.
+      - Production deps come from a fresh
+        `npm ci --omit=dev --omit=optional --ignore-scripts`. `npm prune`
+        kept `prisma` and `typescript` (about 260 MB) because the lockfile
+        marks them devOptional.
+      - `.dockerignore` keeps `.env`, `node_modules`, `docs` and the like
+        out of the build context.
+- [x] **Docker Compose:**
+      - A new `app` profile adds `migrate` (runs once, waits for a healthy
+        Postgres) and `api` (waits for `migrate` to finish and for a
+        healthy MongoDB, avatars in a named volume).
+      - Health checks on both databases.
+      - Plain `docker compose up -d` still starts only the databases.
+- [x] **CI:** a third `docker` job builds both images, applies the
+      migrations to empty service databases, starts the API image and waits
+      for `/health`.
+- [x] **`@AdminOnly()`** (`src/auth/decorators/admin-only.decorator.ts`):
+      one `applyDecorators` for the JWT guard, `RolesGuard`, the admin role,
+      bearer auth and the 401/403 Swagger responses. It replaces 12
+      five-line stacks in 5 REST controllers. The 3 GraphQL mutations keep
+      `GqlAuthGuard`. A unit spec checks the guard order, the role and the
+      Swagger metadata.
+- [x] **Comment pagination:**
+      - `GET /songs/:songId/comments` takes `?page=&limit=` (limit at most
+        100) and returns `{ data, total }`, oldest first, with `_id` as the
+        tie-breaker.
+      - `PaginationQueryDto` and `Paginated<T>` moved to
+        `src/common/pagination/`. The Prisma module had been importing them
+        from the songs feature.
+- [x] **Unused exports:** `DEEZER_TIMEOUT_MS`, `PRISMA_SCHEMA` and
+      `PUBLIC_CACHE_MAX_AGE` are no longer exported. Types that appear in
+      public signatures stay exported.
+- [x] **Verified:**
+      - `npm test` 187/27, `npm run test:e2e` 122/9 (paging and limit tests
+        added); lint, Prettier, `tsc` and the build are clean.
+      - Docker: the image ran against the local databases and was healthy
+        with CSP on, as user `node`. The `migrate` image built every table
+        in both schemas on a throwaway database, which was then dropped.
+        `docker compose --profile app up` brought the stack up healthy.
+      - Sanity check: without `.skip()`, the paging test fails.
+
 **Next chunk (not started):**
-- a Dockerfile (needs compiled migrations)
-- an `@AdminOnly()` decorator to replace the 12 repeated guard and role
-  stacks
-- comment pagination
-- unused exports
-- durable avatar storage before any redeploy.
+- durable avatar storage (S3-compatible) before any redeploy
+- the Railway redeploy itself
+- a coverage report or badge

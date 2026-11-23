@@ -3225,3 +3225,45 @@ blocks. The other helmet headers apply everywhere.
 problems, Prettier, `tsc` and the build are clean. Manual run of the built
 app is good. Sanity: a filter that ignores non-HTTP errors fails the new
 500 test. CI itself is proven only once it runs on GitHub.
+
+## 2026-11-24 — Showcase cleanup, chunk 2: Docker, `@AdminOnly()`, comment pagination
+
+**Docker: `npm prune` doesn't prune what you think.** The first runtime image
+was 717 MB. Pruning left `prisma` (41 MB) and `typescript` (23 MB) in it,
+plus their dependencies. `npm explain` showed why: `@prisma/client` lists
+both as *optional peers*, so the lockfile marks them `devOptional`, and
+`--omit=dev` alone keeps them. `npm ci --omit=dev --omit=optional
+--ignore-scripts` in a clean final stage gets the image to 427 MB, about half
+of which is the Node base image. `--ignore-scripts` is safe here. The only
+postinstall is `prisma generate`, and the client is already compiled into
+`dist`. bcrypt 6 also loads a bundled prebuilt binary rather than compiling
+one, which is also why the image is Debian slim, not Alpine.
+
+**Migrations get their own image target.** The migration CLIs need dev
+dependencies (`prisma`, ts-node for TypeORM's data source), and the runtime
+image shouldn't carry them. So `migrate` is a target off the build stage,
+run once before the API: Compose's `service_completed_successfully` in
+development, and a step in the CI job. It was checked on an empty database:
+all three TypeORM migrations and every Prisma table were created.
+
+**Running as non-root needs a writable `/app`.** GraphQL's code-first setup
+writes `schema.gql` to the working directory at startup, so `/app` is
+chowned to `node` before `USER node`.
+
+**`@AdminOnly()`** is `applyDecorators` over the five decorators every
+admin route repeated: the JWT guard, `RolesGuard`, the role, bearer auth,
+and the 401/403 docs. The guard order lives in one place now. The rewrite
+was scripted, and lint caught the imports it left unused, including two
+that a stale class comment had kept "alive" for the script.
+
+**Comment pagination** reuses the songs DTO, moved to `src/common/pagination/`.
+Sorting by `createdAt` alone isn't enough for stable pages, because two
+comments can share a timestamp, so `_id` breaks ties. This changes the
+response shape from an array to `{ data, total }`. No client in the repo
+read the list (the demo pages only listen for new comments), and
+`rest-client.http` shows the query parameters.
+
+**Verified.** `npm test` 187/27, `npm run test:e2e` 122/9, lint, Prettier,
+`tsc` and the build are clean, and the Docker image and Compose stack were
+checked by hand. The new CI `docker` job is only proven once it runs on
+GitHub.

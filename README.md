@@ -48,7 +48,8 @@ including the SQL each ORM actually sends, is written up in
   - helmet security headers, configurable CORS and graceful shutdown
   - structured request logging
   - one global exception filter gives REST and GraphQL a consistent error
-    shape, and unexpected errors are logged without leaking internals.
+    shape, and unexpected errors are logged without leaking internals
+  - a multi-stage Docker image with a separate migration step.
 
 ## Architecture
 
@@ -95,7 +96,7 @@ Full, interactive documentation is at `/api` (Swagger) and `/graphql`.
 | Songs (TypeORM) | `GET /songs`, `GET /songs/:id`, `POST /songs`, `PUT /songs/:id`, `DELETE /songs/:id` (writes are admin only) |
 | Songs (Prisma) | the same routes under `/prisma/songs`, plus `GET\|PUT /prisma/songs/:id/lyrics`, `POST\|PATCH /prisma/songs/bulk` |
 | Artists (Prisma) | `GET /prisma/artists/:id`, `POST /prisma/artists/:id/albums`, `POST /prisma/artists/:id/albums/bulk`, `DELETE /prisma/artists/orphans` |
-| Comments | `POST /songs/:songId/comments`, `GET /songs/:songId/comments`, `DELETE /comments/:id` (author or admin) |
+| Comments | `POST /songs/:songId/comments`, `GET /songs/:songId/comments` (paginated, oldest first), `DELETE /comments/:id` (author or admin) |
 | Users | `PUT /users/me/avatar`, `GET /users/:id/avatar` |
 | Health | `GET /health` |
 | GraphQL | `/graphql`: song queries and admin mutations, artists with Deezer profiles, signup/login/profile, `commentAdded` subscription |
@@ -115,7 +116,8 @@ Full, interactive documentation is at `/api` (Swagger) and `/graphql`.
 - **Background work:** `@nestjs/event-emitter`, `@nestjs/schedule`.
 - **Uploads:** multer.
 - **Testing:** Jest and supertest.
-- **Local infrastructure and CI:** Docker Compose, GitHub Actions.
+- **Containers and CI:** a multi-stage Dockerfile, Docker Compose,
+  GitHub Actions.
 
 ## Getting started
 
@@ -132,6 +134,17 @@ npm run start:dev
 ```
 
 Then open http://localhost:3000/api (Swagger) or http://localhost:3000/graphql.
+
+**Or run everything in Docker** (no local Node needed):
+
+```bash
+docker compose --profile app up -d --build
+```
+
+This builds the [`Dockerfile`](./Dockerfile), runs a one-off `migrate`
+container that applies both migration sets, then starts the API on port
+3000. The runtime image holds only production dependencies and the compiled
+output, runs as a non-root user, and has a health check on `/health`.
 
 **Trying the API:**
 - **Swagger:** the **Authorize** button accepts a JWT from `POST /auth/login`
@@ -191,11 +204,14 @@ artist, so run the suites against a development database only.
   database itself.
 - **`test/uploads.e2e-spec.ts`:** includes a text file disguised as a PNG.
 
-**CI** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) has two
+**CI** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) has three
 jobs:
 - **Checks:** lint, formatting, type-checking, the build and the unit tests.
 - **End-to-end:** both migration sets and the full suite, against Postgres
   and MongoDB service containers.
+- **Docker:** builds the images, applies the migrations from the `migrate`
+  image to empty databases, then starts the API image and waits for
+  `/health` to pass.
 
 ## Deployment
 
