@@ -31,6 +31,24 @@ import { UserRole } from '../users/entities/user.entity';
 import { PaginationQueryDto } from '../common/pagination/pagination-query.dto';
 import { Paginated } from '../common/pagination/paginated';
 
+// Inline Swagger schema: `Comment` is a Mongoose/GraphQL class, and REST
+// returns the raw document (`_id`, timestamps), not that class's shape.
+const commentSchema = {
+  properties: {
+    _id: { type: 'string' },
+    songId: { type: 'number' },
+    authorId: { type: 'number' },
+    authorEmail: { type: 'string' },
+    body: { type: 'string' },
+    parentComment: {
+      nullable: true,
+      description: 'Parent id on create; the populated parent on list.',
+    },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 /**
  * REST endpoints for song comments, stored in MongoDB. Routes span two
  * bases (`songs/:songId/comments` and `comments/:id`), so each route has a
@@ -57,7 +75,15 @@ export class CommentsController {
   @ApiOperation({
     summary: 'Comment on a song. Requires a logged-in user (any role).',
   })
-  @ApiResponse({ status: 201, description: 'Comment created.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Comment created.',
+    schema: commentSchema,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid body, or parentCommentId not on this song.',
+  })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @ApiResponse({ status: 404, description: 'No song exists with this id.' })
   @UseGuards(AuthGuard('jwt'))
@@ -91,7 +117,7 @@ export class CommentsController {
     description: "A page of the song's comments.",
     schema: {
       properties: {
-        data: { type: 'array', items: { type: 'object' } },
+        data: { type: 'array', items: commentSchema },
         total: { type: 'number' },
       },
     },
@@ -121,7 +147,7 @@ export class CommentsController {
     summary:
       "Delete a comment. Requires the comment's own author, or an admin.",
   })
-  @ApiResponse({ status: 200, description: 'Comment deleted.' })
+  @ApiResponse({ status: 204, description: 'Comment deleted.' })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @ApiResponse({
     status: 403,
@@ -130,10 +156,11 @@ export class CommentsController {
   @ApiResponse({ status: 404, description: 'No comment exists with this id.' })
   @UseGuards(AuthGuard('jwt'))
   @Delete('comments/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-  ): Promise<{ message: string }> {
+  ): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException(`Comment with id ${id} was not found`);
     }
@@ -151,6 +178,5 @@ export class CommentsController {
     }
 
     await this.commentsService.remove(id);
-    return { message: 'Comment deleted' };
   }
 }

@@ -22,7 +22,9 @@ including the SQL each ORM actually sends, is written up in
 - **Authentication:**
   - signup and login issuing JWTs, with `admin` and `user` roles
   - TOTP two-factor login with replay protection
-  - API keys sent as `x-api-key`.
+  - API keys sent as `x-api-key`
+  - rate limiting: 5 attempts per minute per IP on password and TOTP
+    checks (REST and GraphQL), 100 requests per minute elsewhere.
 - **Comments in MongoDB:** stored next to the relational data. New comments
   are pushed live over **Socket.IO** and through a **GraphQL subscription**.
 - **GraphQL:** code-first. It uses **DataLoader** batching to avoid N+1
@@ -187,7 +189,6 @@ missing or malformed value stops the app with a clear error.
 ```bash
 npm test              # unit tests (no databases needed)
 npm run test:e2e      # end-to-end, against the Postgres and MongoDB in .env
-npm run test:cov      # coverage
 ```
 
 The end-to-end suites boot the whole app against real databases. Each
@@ -213,12 +214,45 @@ jobs:
   image to empty databases, then starts the API image and waits for
   `/health` to pass.
 
-## Deployment
+### Coverage
+
+Measured on 2026-11-24 with unit and end-to-end runs merged:
+
+| Lines | Statements | Functions | Branches |
+|---|---|---|---|
+| 98.6% | 98.6% | 97.4% | 81.2% |
+
+The unit tests alone cover 76% of lines. Most of the gap is wiring that only
+runs when the whole app boots, which is what the end-to-end suites do.
+Excluded from the count, as setup rather than logic: `main.ts`, the
+`*.module.ts` files, the generated Prisma client and `src/database`
+(migrations, seed, CLI data source).
+
+```bash
+npm run test:cov        # unit coverage    -> coverage/unit
+npm run test:e2e:cov    # E2E coverage     -> coverage/e2e
+npm run coverage:merge  # combined summary -> coverage/merged (HTML report)
+```
+
+## Deployment and known limits
 
 [`railway.json`](./railway.json) runs both migration sets and then starts the
-production build. The Railway service is currently paused. Before going live
-again, avatars need durable storage, such as object storage or a volume,
-because local disk is wiped on each deploy.
+production build, and the [`Dockerfile`](./Dockerfile) runs anywhere that
+takes a container. The Railway deployment is paused and not planned to
+return, so there's no live demo. These are deliberate limits of this
+project, not unfinished work:
+
+- **Avatars are stored on local disk.** That's fine for one long-lived
+  server or a Docker volume. A platform that wipes the disk on deploy would
+  need object storage instead.
+- **The welcome email is logged, not sent.** It runs through an event
+  listener, so a real mail service would only replace `MailService`.
+- **Rate limits are in memory and per process.** Several instances behind a
+  load balancer would need a shared store such as Redis. Behind a proxy, the
+  app would also need Express's `trust proxy` setting so it sees real
+  client IPs.
+- **GraphQL subscriptions use an in-memory PubSub**, so they reach clients
+  connected to the same process only.
 
 ## How it was built
 

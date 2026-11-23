@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 
-describe('Health check (e2e)', () => {
+describe('Health check and root (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeAll(async () => {
@@ -30,5 +30,12 @@ describe('Health check (e2e)', () => {
       status: 'ok',
       checks: { postgres: 'up', prisma: 'up', mongodb: 'up' },
     });
+  });
+
+  it('redirects the base URL to the API docs', async () => {
+    await request(app.getHttpServer())
+      .get('/')
+      .expect(302)
+      .expect('Location', '/api');
   });
 });

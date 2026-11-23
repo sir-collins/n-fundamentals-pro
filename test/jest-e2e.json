@@ -1,13 +1,24 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
+  "rootDir": "..",
+  "roots": ["<rootDir>/test"],
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "src/generated/.+\\.ts$": "<rootDir>/prisma-cjs-transformer.js",
+    "src/generated/.+\\.ts$": "<rootDir>/test/prisma-cjs-transformer.js",
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
     "node_modules/(?!(@nestjs/mongoose|@nestjs/event-emitter|@nestjs/schedule)/)"
-  ]
+  ],
+  "collectCoverageFrom": [
+    "src/**/*.ts",
+    "!src/generated/**",
+    "!src/main.ts",
+    "!src/**/*.module.ts",
+    "!src/database/**",
+    "!src/**/*.spec.ts"
+  ],
+  "coverageDirectory": "coverage/e2e",
+  "coverageReporters": ["json", "text-summary"]
 }

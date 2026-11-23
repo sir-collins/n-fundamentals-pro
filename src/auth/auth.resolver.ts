@@ -8,6 +8,7 @@ import { LoginResult } from './dto/login-result.type';
 import { SignupResult } from './dto/signup-result.type';
 import { User } from '../users/entities/user.entity';
 import type { AuthUser } from './auth-user';
+import { AuthThrottle } from './auth-throttle';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 /**
@@ -29,6 +30,7 @@ export class AuthResolver {
    * args. Throws the same error `LocalStrategy` would.
    * @throws UnauthorizedException if the credentials don't match a user.
    */
+  @AuthThrottle()
   @Mutation(() => LoginResult)
   async login(@Args('input') input: LoginDto): Promise<LoginResult> {
     const user = await this.authService.validateUser(
