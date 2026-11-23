@@ -22,9 +22,9 @@ Skip tags that would just repeat the signature.
 ## Rule 2 — inline comments explain "why," never "what"
 
 Reserve `//` comments for non-obvious decisions — a deliberate guard clause,
-a deliberate pattern (like a try/catch that rethrows known exceptions and
-wraps everything else as a 500). If you can already tell what a line does by
-reading it, it doesn't need a comment.
+a workaround for a library quirk, or a security reason a line must stay as it
+is. If you can already tell what a line does by reading it, it doesn't need a
+comment.
 
 ## Rule 3 — no stale comments
 

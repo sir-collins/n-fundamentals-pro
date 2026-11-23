@@ -1287,7 +1287,7 @@ Completes all three roadmap bullets for Project 7.
       (`src/configure-app.ts`); every DTO field was already decorated, and
       all suites still pass. **SQL comparison** measured with Postgres
       `log_statement = 'all'` (temporary, reset afterwards): see
-      [`04-prisma-vs-typeorm.md`](./04-prisma-vs-typeorm.md). Sanity: the
+      [`04-prisma-vs-typeorm.md`](../04-prisma-vs-typeorm.md). Sanity: the
       pre-fix run *is* the break, with 4 mass-assignment tests failing,
       2 per ORM. `npm test` 153/19; `npm run test:e2e` 109/8; `tsc`,
       eslint, Prettier, build clean.
@@ -1404,3 +1404,77 @@ job and validated file uploads. Queues, cookies/sessions and streaming (beyond
 the avatar download) were not built. Production caveats carried forward:
 Railway is paused, Prisma migrations were never deployed there, and uploads
 need durable storage before they could be.
+
+---
+
+## Showcase cleanup (after the roadmap)
+
+With all 10 projects done, the repo is being turned into a portfolio piece:
+the code was solid, but the first impression said "course exercise".
+
+### Chunk 1 — ✅ Done (2026-11-24, branch `showcase-1-cleanup`)
+
+- [x] **CI:** `.github/workflows/ci.yml` runs two jobs on every push and PR.
+      - **Checks:** lint, Prettier, `tsc`, build and unit tests.
+      - **End-to-end:** Postgres and MongoDB service containers, both
+        migration sets, then the full suite.
+      - New scripts make this possible: `lint:check` (`lint` still
+        `--fix`es), `format:check`, `typecheck` and `prisma:migrate`.
+- [x] **Repo surface:**
+      - MIT `LICENSE`, `.nvmrc` (24), and `package.json` description,
+        author, repository and engines.
+      - README rewritten as a project pitch: badges, features, a Mermaid
+        architecture diagram, an API overview, quick start, testing and CI.
+        The course credit moved to "How it was built".
+      - The Railway start command now also applies Prisma's migrations.
+- [x] **Docs:** the roadmap, progress and journal moved to `docs/learning/`.
+      `04-prisma-vs-typeorm.md` is the featured doc, reworded as a
+      deliberate comparison.
+- [x] **Error handling:**
+      - About 47 copy-pasted try/catch blocks (rethrow `HttpException`,
+        otherwise 500) were removed from 8 controllers.
+      - `HttpExceptionFilter` became `AllExceptionsFilter` (`@Catch()`).
+        Unknown REST errors are logged with their stack and return the
+        usual shape with `Internal server error`; before, they were never
+        logged.
+      - Unknown GraphQL errors are rethrown, so their behaviour is
+        unchanged.
+      - The one meaningful catch, `SongTitleConflictError` → 409, stays and
+        now rethrows anything else.
+- [x] **Runtime:**
+      - `GET /health` pings Postgres (TypeORM), Prisma and MongoDB. It
+        returns 503 if any is down, with a 3 s timeout per check.
+      - helmet (CSP in production only), CORS through an optional
+        `CORS_ORIGIN`, `enableShutdownHooks()`, and `void bootstrap()`
+        (the old lint warning).
+      - Swagger's title and description are no longer "a learning project".
+- [x] **Leftovers:**
+      - Hello-world `AppController`/`AppService` removed.
+      - `LoggerMiddleware` now uses Nest's `Logger` (method, URL, status,
+        duration), applies to all routes and is skipped when
+        `NODE_ENV=test`.
+      - `create-song-dto.ts` renamed to `create-song.dto.ts`.
+- [x] **Comments:** trimmed across `src/` (1,361 lines out, 708 in) by three
+      parallel agents. All "Project N" and history wording is gone, and the
+      gotchas are kept. Several stale comments were fixed along the way.
+      Commenting standard rule 2 was updated.
+- [x] **Verified:**
+      - The comment-stripped build is byte-identical before and after the
+        trim.
+      - `npm test` 185/26 (filter and health specs added; hello-world spec
+        removed), `npm run test:e2e` 120/9 (health suite replaces the
+        hello-world one; 500-shape test added).
+      - lint (0 problems), Prettier, `tsc` and the build are clean.
+      - Manual run against the built app: `/health` 200 with all three up,
+        helmet headers present, Swagger and GraphQL respond, request log
+        lines appear.
+      - Sanity check: a filter that ignores non-HTTP errors fails the
+        500-shape test.
+
+**Next chunk (not started):**
+- a Dockerfile (needs compiled migrations)
+- an `@AdminOnly()` decorator to replace the 12 repeated guard and role
+  stacks
+- comment pagination
+- unused exports
+- durable avatar storage before any redeploy.

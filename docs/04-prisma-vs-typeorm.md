@@ -1,11 +1,11 @@
 # Prisma vs TypeORM, measured in this app
 
-Project 9 rebuilt Project 2's data layer with Prisma and ran it next to
-TypeORM: `/songs` uses TypeORM, and `/prisma/songs` (plus the albums,
+The songs data layer exists twice, once in TypeORM and once in Prisma, running
+side by side: `/songs` uses TypeORM, and `/prisma/songs` (plus the albums,
 lyrics, bulk and import routes) uses Prisma. Both talk to the same
 Postgres, in different schemas (`public` and `prisma`). This document
 compares the two from what we actually built and measured, not from
-feature lists. The *why* of each step is in [`03-journal.md`](./03-journal.md).
+feature lists. The *why* of each step is in the [build journal](./learning/03-journal.md).
 
 Versions: TypeORM 1.1.0, Prisma **7.10.0** (pinned exactly, see
 [Friction](#tooling-friction)), Postgres 16.
@@ -77,9 +77,9 @@ What the numbers show:
 - **Diffing vs replacing.** TypeORM deleted only the link that went away.
   Prisma's `set: []` deletes every link and re-inserts the ones that stay.
   It's simpler to write, but it costs more writes when little changes.
-- **TypeORM's `findAndCount` has the gap that sub-step 5 closed on the
-  Prisma side**: its three queries share no snapshot. `/songs` still has
-  it (left as is; Project 2's route, out of scope here).
+- **TypeORM's `findAndCount` has a gap the Prisma side closes** with a
+  transaction: its three queries share no snapshot, so `data` and `total`
+  can disagree under concurrent writes. `/songs` still has it.
 - **`connectOrCreate` is a `SELECT` then an `INSERT`, not an upsert.** That's
   why two concurrent creates of the same new artist can collide (`P2002`).
   TypeORM's `findOrCreateMany` has the same race.

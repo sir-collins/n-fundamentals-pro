@@ -3174,3 +3174,54 @@ migration was applied to the dev database.
 
 That completes Project 10's four features: `@CurrentUser()`, Event
 Emitter, CRON and file upload.
+
+## 2026-11-24 — Showcase cleanup, chunk 1: from course project to portfolio piece
+
+**Why.** The roadmap is finished, and the repo is going on LinkedIn. Three
+read-only surveys found the code solid but the presentation tutorial-shaped.
+The README opened with "a hands-on NestJS learning project", there was no CI
+or licence, `GET /` said "Hello I am learning nestjs!", and comments
+narrated the course ("Project 9", "used to", essays on what `async` does).
+
+**Error handling was the real code smell.** Every controller handler was
+wrapped in the same try/catch: rethrow known exceptions, turn everything
+else into a 500. That was 47 copies. Worse, those unknown errors were never
+logged, so a production 500 left no trace. The fix is one global
+`@Catch()` filter. `HttpException`s format as before. Anything else is
+logged with its stack and gets the same JSON shape with a generic message.
+Over GraphQL, unknown errors are rethrown so Apollo's handling is
+unchanged. A catch that *translates* a domain error (`SongTitleConflictError`
+→ 409) is not boilerplate and stays. The unwrapping was scripted, and the
+script skipped any catch that did more than rethrow-or-500. Streamed
+responses need a guard: if headers are already sent, the filter can only
+end the response.
+
+**Gotcha: Terminus 12 can't load under this Jest setup.** `@nestjs/terminus`
+12 is ESM and reads `import.meta`, which ts-jest's CommonJS transform rejects
+outright (`Cannot use 'import.meta' outside a module`). Unlike
+`@nestjs/mongoose` and friends, `transformIgnorePatterns` doesn't help. Three
+pings don't need a framework, so `/health` is about 40 lines of our own: a
+`Promise.race` per check with a 3 s timeout, 503 with the same body when any
+check is down. This is the same lesson as `FileTypeValidator`: check ESM-only
+packages against the test setup first.
+
+**Gotcha: request logging under test.** Applied to every route, the logger
+would print a line for each of the ~120 E2E requests. `AppModule` now skips
+it when `NODE_ENV=test`, which Jest sets.
+
+**Comments, done in parallel safely.** Three agents trimmed disjoint
+folders. To prove they changed only comments, `src/` was compiled with
+`--removeComments` before and after into scratch folders, and `diff -r`
+reported them identical. That's a stronger check than reading 81 diffs. Two
+side effects: one agent's Prettier run touched another's files (harmless,
+since Prettier only formats), and lint later caught five imports left
+unused by the try/catch removal, used only in `instanceof` checks.
+
+**Helmet's CSP is production-only.** Swagger UI, the Apollo landing page and
+the `public/` demo pages use inline or CDN scripts, which a default CSP
+blocks. The other helmet headers apply everywhere.
+
+**Verified.** `npm test` 185/26, `npm run test:e2e` 120/9, lint with 0
+problems, Prettier, `tsc` and the build are clean. Manual run of the built
+app is good. Sanity: a filter that ignores non-HTTP errors fails the new
+500 test. CI itself is proven only once it runs on GitHub.
