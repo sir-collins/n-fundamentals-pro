@@ -266,7 +266,7 @@ export class AuthController {
    */
   @ApiBearerAuth()
   @ApiOperation({ summary: "Revoke one of the caller's own API keys." })
-  @ApiResponse({ status: 200, description: 'API key revoked.' })
+  @ApiResponse({ status: 204, description: 'API key revoked.' })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
   @ApiResponse({
     status: 404,
@@ -274,12 +274,11 @@ export class AuthController {
   })
   @UseGuards(AuthGuard('jwt'))
   @Delete('api-keys/:id')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.NO_CONTENT)
   async revokeApiKey(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
-  ): Promise<{ message: string }> {
+  ): Promise<void> {
     await this.apiKeysService.revoke(userId, id);
-    return { message: 'API key revoked' };
   }
 }

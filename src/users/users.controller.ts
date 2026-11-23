@@ -27,6 +27,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -81,7 +82,10 @@ export class UsersController {
   @ApiResponse({
     status: 200,
     description: 'Avatar stored.',
-    schema: { example: { avatarUrl: '/users/1/avatar' } },
+    schema: {
+      properties: { avatarUrl: { type: 'string' } },
+      example: { avatarUrl: '/users/1/avatar' },
+    },
   })
   @ApiResponse({ status: 400, description: 'Missing file or not an image.' })
   @ApiResponse({ status: 401, description: 'Missing/invalid JWT.' })
@@ -126,7 +130,12 @@ export class UsersController {
    * @throws NotFoundException if the user doesn't exist or has no avatar.
    */
   @ApiOperation({ summary: "A user's avatar image. Public." })
-  @ApiResponse({ status: 200, description: 'The image bytes.' })
+  @ApiProduces('image/png', 'image/jpeg', 'image/webp')
+  @ApiResponse({
+    status: 200,
+    description: 'The image bytes, with a matching Content-Type.',
+    schema: { type: 'string', format: 'binary' },
+  })
   @ApiResponse({ status: 404, description: 'No such user, or no avatar.' })
   @Get(':id/avatar')
   async getAvatar(

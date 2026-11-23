@@ -31,6 +31,7 @@ import { PrismaSongsModule } from './prisma-songs/prisma-songs.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaRelationsModule } from './prisma-relations/prisma-relations.module';
 import { HealthModule } from './health/health.module';
+import { RootController } from './root.controller';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
@@ -131,6 +132,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
       }),
     }),
   ],
+  controllers: [RootController],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule implements NestModule {

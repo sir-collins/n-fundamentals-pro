@@ -524,7 +524,7 @@ describe('REST API (e2e)', () => {
       await http()
         .delete(`/auth/api-keys/${keyId}`)
         .set('Authorization', `Bearer ${userToken}`)
-        .expect(200);
+        .expect(204);
 
       await http()
         .get('/auth/api-keys/whoami')
@@ -612,7 +612,7 @@ describe('REST API (e2e)', () => {
       await http()
         .delete(`/comments/${rootId}`)
         .set('Authorization', `Bearer ${userToken}`)
-        .expect(200);
+        .expect(204);
     });
 
     it("lets an admin delete anyone's comment", async () => {
@@ -622,7 +622,7 @@ describe('REST API (e2e)', () => {
       await http()
         .delete(`/comments/${othersId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
+        .expect(204);
       await http()
         .delete(`/comments/${othersId}`)
         .set('Authorization', `Bearer ${adminToken}`)
