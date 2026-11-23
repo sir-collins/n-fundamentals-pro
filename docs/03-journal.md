@@ -3082,3 +3082,95 @@ its logic will catch. Test that it's registered, too.
 
 **Verified.** `npm test` 164/22 (2 new), `npm run test:e2e` 112/8 (2 new),
 `tsc`, eslint, Prettier and the build are clean.
+
+## 2026-11-23 — File upload: avatars, and not trusting the client
+
+The last of the four capstone features. Every body so far was JSON
+checked against a DTO. An upload is `multipart/form-data`, read by multer
+(bundled with `@nestjs/platform-express`) through `FileInterceptor`, and
+validated by `ParseFilePipe`. Users upload an avatar with
+`PUT /users/me/avatar`, using step 1's `@CurrentUser('id')`, and anyone
+can fetch it with `GET /users/:id/avatar`.
+
+**The early check paid off.** I'd flagged that Nest's `FileTypeValidator`
+checks magic numbers through the ESM-only `file-type` package, and checked
+it under Jest before building anything. It couldn't load
+(`ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`), and in that case it
+**fails closed**: a real PNG and a fake one were both rejected. Nest's own
+warning suggests `--experimental-vm-modules`. That made the validator work,
+but 13 other suites broke with `exports is not defined`: the
+`transformIgnorePatterns` workaround for `@nestjs/mongoose`,
+`event-emitter` and `schedule` stops working in that mode. The options
+were our own validator, Nest's with the check skipped in tests (so nothing
+would prove the security property), or moving all of Jest to ESM mode.
+We went with our own. `ImageSignatureValidator` is a `FileValidator` subclass
+with three signatures: PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`, and
+WebP `RIFF....WEBP`. Those are the only formats we accept anyway.
+
+**Not trusting the client, three ways:**
+- **Type:** only the bytes count. The E2E test sends PHP code named
+  `cat.png` with `image/png` and gets a 400.
+- **Filename:** never used. Files are stored as `<userId>-<uuid>.<ext>`,
+  with the extension taken from the *detected* type. A JPEG sent as
+  `me.png`/`image/png` is stored as `.jpg` and served as `image/jpeg`, and
+  `pathFor` applies `basename`, so even a tampered DB value can't leave the
+  folder.
+- **Size, limited twice:** multer's `limits.fileSize` stops reading at
+  2 MB and returns a 413, so a huge upload is never fully buffered.
+  `MaxFileSizeValidator` alone would only check after buffering the whole
+  file. It's kept for a clear message if the two limits ever drift apart.
+
+**Replacing an avatar.** `UsersService.setAvatarPath` reads the old
+filename and writes the new one in one transaction with the row locked
+(`FOR UPDATE`), and returns the old name for the controller to delete. The
+lock is the same concern as the TOTP replay fix: two racing uploads must
+not both read the same old file and leave a new file with nothing pointing
+at it. If the token outlived its user, the new file is removed and the
+request gets a 401.
+
+**Gotcha: config is read at import time.** The first E2E version set
+`process.env.UPLOADS_DIR` in `beforeAll`, and the files went to the real
+`./uploads` anyway. `ConfigModule.forRoot()` runs when `AppModule` is
+imported, at the top of the test file, before `beforeAll`. The test now
+overrides the storage provider with one pointed at a temp directory. The
+stray file was deleted, and `./uploads` is gitignored regardless.
+
+**Gotcha: the editor couldn't see `Express.Multer.File`.** After the step
+was verified, VS Code still flagged `Express.Multer.File` in the controller
+and its spec ("Namespace 'global.Express' has no exported member
+'Multer'"), while `tsc`, the build and every test passed. My first
+explanation, a TypeScript server that had started before `@types/multer`
+was installed, was wrong: restarting it changed nothing. The type is a
+*global* added by `@types/multer`, so it only exists once that package is
+loaded, and this editor wasn't loading it automatically the way the
+command-line compiler does. The fix is a type-only
+`/// <reference types="multer" />` at the top of `users.controller.ts`,
+which states the dependency where it's used. The spec gets it through its
+import of the controller. One more trap on the way: the editor kept
+showing the old error at the old line number until the file was reopened.
+
+**The sanity break.** With the validator changed to trust the claimed
+type (what a naive version does), the fake-PNG test failed, though with a
+500 rather than the success I expected. The controller takes the extension
+from `detectImageType`, which returned nothing for PHP bytes, so it threw
+before writing anything. The validator is the real defence, and the
+controller's own detection fails safe behind it.
+
+**Not done:** the manual upload against the built app (the command was
+declined). The E2E suite covers the same flow against the real app.
+
+**Production caveat:** files live on local disk. Railway's disk is wiped
+on every deploy, so avatars would vanish there. The fix is object storage
+(S3, R2) or a Railway volume, documented rather than built since Railway is
+paused.
+
+**Lessons:** check risky dependencies before building on them. When a
+security check fails closed, that's safe, but it's still broken. Config
+read at import time can't be changed from inside a test's `beforeAll`.
+
+**Verified.** `npm test` 179/25 (15 new), `npm run test:e2e` 119/9 (7 new
+in a new suite), `tsc`, eslint, Prettier and the build are clean. The
+migration was applied to the dev database.
+
+That completes Project 10's four features: `@CurrentUser()`, Event
+Emitter, CRON and file upload.

@@ -28,4 +28,7 @@ export const envValidationSchema = Joi.object({
   // Base URL for the Deezer public API behind `Artist.profile`. Defaulted
   // (it's public, needs no key); overridable for tests or a proxy.
   DEEZER_API_URL: Joi.string().uri().default('https://api.deezer.com'),
+  // Where uploaded files (avatars) are written, relative to the working
+  // directory unless absolute. Overridable so tests can use a temp dir.
+  UPLOADS_DIR: Joi.string().default('uploads'),
 });
